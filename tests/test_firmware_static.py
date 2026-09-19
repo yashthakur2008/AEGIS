@@ -3,6 +3,37 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_platformio_builds_coordinate_controller_by_default():
+    config = (ROOT / "platformio.ini").read_text()
+    assert "default_envs = megaatmega2560" in config
+    assert "src_dir = firmware/aegis_controller" in config
+    assert "include_dir = firmware/lib" in config
+    assert "waspinator/AccelStepper@^1.64" in config
+
+
+def test_architecture_doc_matches_firmware_protocol_and_safety_contract():
+    doc = (ROOT / "docs/architecture/wound_to_coordinate_pipeline.md").read_text()
+    for command in ("HOME", "MOVE <x_mm> <y_mm> <z_mm>", "STOP", "STATUS"):
+        assert command in doc
+    for frame in ("Image", "Machine", "Motor"):
+        assert frame in doc
+    assert "Keep CAP disabled by default" in doc
+    assert "Verify limit switch polarity" in doc
+
+
+def test_readme_exposes_build_and_pipeline_entry_points():
+    readme = (ROOT / "README.md").read_text()
+    assert "pio run" in readme
+    assert "firmware/aegis_controller/" in readme
+    assert "docs/architecture/wound_to_coordinate_pipeline.md" in readme
+
+
+def test_gitignore_excludes_generated_build_outputs():
+    gitignore = (ROOT / ".gitignore").read_text()
+    for pattern in (".pio/", "__pycache__/", ".pytest_cache/"):
+        assert pattern in gitignore
+
+
 def test_shared_pin_header_matches_documented_current_wiring():
     header = (ROOT / "firmware/lib/aegis_pins.h").read_text()
     expected = {
