@@ -20,6 +20,14 @@ def test_shared_pin_header_matches_documented_current_wiring():
         assert f"constexpr uint8_t {name} = {value};" in header
 
 
+def test_jog_test_uses_shared_pin_map_and_limit_safety():
+    firmware = (ROOT / "firmware/jog_test/jog_test.ino").read_text()
+    assert '#include "aegis_pins.h"' in firmware
+    for pin in ("AEGIS_X_LIMIT_PIN", "AEGIS_Y_LIMIT_PIN", "AEGIS_Z_LIMIT_PIN"):
+        assert pin in firmware
+    assert "limitsClearForDirection" in firmware
+
+
 def test_controller_declares_coordinate_serial_commands():
     firmware = (ROOT / "firmware/aegis_controller/main.cpp").read_text()
     for command in ("HOME", "MOVE", "STOP", "STATUS"):
