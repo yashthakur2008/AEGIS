@@ -61,7 +61,16 @@ def test_jog_test_uses_shared_pin_map_and_limit_safety():
 
 def test_controller_declares_coordinate_serial_commands():
     firmware = (ROOT / "firmware/aegis_controller/main.cpp").read_text()
-    for command in ("HOME", "MOVE", "STOP", "STATUS"):
+    for command in ("HOME", "MOVE", "PLASMA", "STOP", "STATUS"):
         assert f'"{command}"' in firmware
     assert "stepsPerMm" in firmware
     assert "machineToSteps" in firmware
+
+
+def test_controller_declares_plasma_pwm_safety_defaults():
+    header = (ROOT / "firmware/lib/aegis_pins.h").read_text()
+    firmware = (ROOT / "firmware/aegis_controller/main.cpp").read_text()
+    assert "AEGIS_PLASMA_PWM_PIN" in header
+    assert "disablePlasma();" in firmware
+    assert "analogWrite(AEGIS_PLASMA_PWM_PIN, 0)" in firmware
+    assert "PLASMA <intensity_0_to_1> <dwell_ms>" in (ROOT / "docs/architecture/wound_to_coordinate_pipeline.md").read_text()

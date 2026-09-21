@@ -15,5 +15,8 @@ constexpr uint8_t AEGIS_X_LIMIT_PIN = 49;
 constexpr uint8_t AEGIS_Y_LIMIT_PIN = 51;
 constexpr uint8_t AEGIS_Z_LIMIT_PIN = 53;
 
+// PWM-capable plasma control output. Keep plasma disabled until safety validation.
+constexpr uint8_t AEGIS_PLASMA_PWM_PIN = 6;
+
 constexpr uint8_t AEGIS_JOYSTICK_Y_PIN = A1;
 constexpr uint8_t AEGIS_JOYSTICK_X_PIN = A2;

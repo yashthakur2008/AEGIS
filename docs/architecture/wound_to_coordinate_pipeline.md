@@ -42,12 +42,14 @@ line-based protocol at 115200 baud:
 | `MOVE <x_mm> <y_mm> <z_mm>` | Move to a clamped machine-space target. |
 | `STOP` | Immediately hold the current target position. |
 | `STATUS` | Print current step positions. |
+| `PLASMA <intensity_0_to_1> <dwell_ms>` | Temporarily drive the plasma PWM output, clamped to a safe 0-1 command range. |
 
 Example:
 
 ```text
 HOME
 MOVE 20.0 35.0 4.0
+PLASMA 0.35 500
 STATUS
 STOP
 ```

@@ -30,12 +30,14 @@ constexpr const char *CMD_HOME = "HOME";
 constexpr const char *CMD_MOVE = "MOVE";
 constexpr const char *CMD_STOP = "STOP";
 constexpr const char *CMD_STATUS = "STATUS";
+constexpr const char *CMD_PLASMA = "PLASMA";
 
 AccelStepper xMotor(AccelStepper::DRIVER, AEGIS_X_STEP_PIN, AEGIS_X_DIR_PIN);
 AccelStepper yMotor(AccelStepper::DRIVER, AEGIS_Y_STEP_PIN, AEGIS_Y_DIR_PIN);
 AccelStepper zMotor(AccelStepper::DRIVER, AEGIS_Z_STEP_PIN, AEGIS_Z_DIR_PIN);
 
 String inputLine;
+unsigned long plasmaOffAtMs = 0;
 
 long clampSteps(long value, const AxisCalibration &axis) {
   if (value < axis.minSteps) return axis.minSteps;
@@ -70,7 +72,21 @@ void stopAll() {
   zMotor.stop();
 }
 
+void setPlasmaIntensity(float intensity, unsigned long dwellMs) {
+  float clamped = intensity;
+  if (clamped < 0.0f) clamped = 0.0f;
+  if (clamped > 1.0f) clamped = 1.0f;
+  analogWrite(AEGIS_PLASMA_PWM_PIN, static_cast<int>(lround(clamped * 255.0f)));
+  plasmaOffAtMs = clamped > 0.0f && dwellMs > 0 ? millis() + dwellMs : 0;
+}
+
+void disablePlasma() {
+  analogWrite(AEGIS_PLASMA_PWM_PIN, 0);
+  plasmaOffAtMs = 0;
+}
+
 void hardStopAll() {
+  disablePlasma();
   xMotor.setSpeed(0);
   yMotor.setSpeed(0);
   zMotor.setSpeed(0);
@@ -157,7 +173,24 @@ void handleCommand(String line) {
     return;
   }
 
-  Serial.println("ERR unknown command. Use HOME, MOVE x y z, STOP, STATUS.");
+
+  if (line.startsWith("PLASMA ")) {
+    float intensity = 0.0f;
+    unsigned long dwellMs = 0;
+    int parsed = sscanf(line.c_str(), "PLASMA %f %lu", &intensity, &dwellMs);
+    if (parsed != 2) {
+      Serial.println("ERR PLASMA expects: PLASMA <intensity_0_to_1> <dwell_ms>");
+      return;
+    }
+    setPlasmaIntensity(intensity, dwellMs);
+    Serial.print("OK PLASMA ");
+    Serial.print(intensity);
+    Serial.print(' ');
+    Serial.println(dwellMs);
+    return;
+  }
+
+  Serial.println("ERR unknown command. Use HOME, MOVE x y z, PLASMA intensity dwell_ms, STOP, STATUS.");
 }
 
 void setup() {
@@ -165,10 +198,12 @@ void setup() {
   pinMode(AEGIS_X_LIMIT_PIN, INPUT);
   pinMode(AEGIS_Y_LIMIT_PIN, INPUT);
   pinMode(AEGIS_Z_LIMIT_PIN, INPUT);
+  pinMode(AEGIS_PLASMA_PWM_PIN, OUTPUT);
+  disablePlasma();
   configureAxis(xMotor);
   configureAxis(yMotor);
   configureAxis(zMotor);
-  Serial.println("AEGIS controller ready. Commands: HOME, MOVE x_mm y_mm z_mm, STOP, STATUS");
+  Serial.println("AEGIS controller ready. Commands: HOME, MOVE x_mm y_mm z_mm, PLASMA intensity dwell_ms, STOP, STATUS");
 }
 
 void loop() {
@@ -187,6 +222,8 @@ void loop() {
   if (limitHit(AEGIS_X_LIMIT_PIN) && xMotor.speed() < 0) hardStopAll();
   if (limitHit(AEGIS_Y_LIMIT_PIN) && yMotor.speed() < 0) hardStopAll();
   if (limitHit(AEGIS_Z_LIMIT_PIN) && zMotor.speed() < 0) hardStopAll();
+
+  if (plasmaOffAtMs > 0 && millis() >= plasmaOffAtMs) disablePlasma();
 
   xMotor.run();
   yMotor.run();
