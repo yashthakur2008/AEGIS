@@ -28,6 +28,12 @@ hardware revision). See the discrepancy note at the bottom.
 | VRy (joystick Y) | A1  | —          |
 | VRx (joystick X) | A2  | —          |
 
+## Plasma control
+
+| Signal | Pin | Wire/notes |
+|--------|-----|------------|
+| Plasma PWM enable/intensity | 6 | PWM-capable placeholder output. Keep disconnected or disabled until CAP driver interface and safety interlock are validated. |
+
 ## Discrepancy with final report (Appendix E)
 
 The report's `MechanismCameraControl.ino` listing uses an **older** pin map that

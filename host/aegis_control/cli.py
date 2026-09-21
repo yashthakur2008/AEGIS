@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import argparse
+import csv
+from pathlib import Path
+
+from .calibration import AffineCalibration
+from .planner import PlasmaPolicy, TreatmentPlanner, VisionDetection
+
+
+def load_detections(path: Path) -> list[VisionDetection]:
+    with path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        return [
+            VisionDetection(
+                centroid_x_px=float(row["centroid_x_px"]),
+                centroid_y_px=float(row["centroid_y_px"]),
+                area_px2=float(row["area_px2"]),
+                confidence=float(row.get("confidence") or 1.0),
+            )
+            for row in reader
+        ]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Plan AEGIS gantry and plasma commands from CV detections.")
+    parser.add_argument("detections_csv", type=Path)
+    parser.add_argument("--x-mm-per-px", type=float, required=True)
+    parser.add_argument("--y-mm-per-px", type=float, required=True)
+    parser.add_argument("--x-offset-mm", type=float, default=0.0)
+    parser.add_argument("--y-offset-mm", type=float, default=0.0)
+    parser.add_argument("--z-mm", type=float, default=4.0)
+    parser.add_argument("--emit-plasma", action="store_true", help="Print PLASMA commands after MOVE commands.")
+    args = parser.parse_args()
+
+    calibration = AffineCalibration.from_scale_offset(
+        x_mm_per_px=args.x_mm_per_px,
+        y_mm_per_px=args.y_mm_per_px,
+        x_offset_mm=args.x_offset_mm,
+        y_offset_mm=args.y_offset_mm,
+        z_mm=args.z_mm,
+    )
+    planner = TreatmentPlanner(calibration=calibration, plasma_policy=PlasmaPolicy())
+    print("HOME")
+    for waypoint in planner.plan(load_detections(args.detections_csv)):
+        print(waypoint.move_command())
+        if args.emit_plasma:
+            print(waypoint.plasma_command())
+    print("STATUS")
+
+
+if __name__ == "__main__":
+    main()

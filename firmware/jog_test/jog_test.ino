@@ -3,62 +3,67 @@
  * 3-Axis Gantry: Stepper Jog Test
  *
  * Bring-up / bench-test sketch. Jogs all three axes together via serial
- * commands so the motor wiring and driver direction can be verified before
- * running the full MechanismCameraControl firmware (vision + homing + toolpath).
+ * commands so motor wiring, driver direction, and limit switches can be
+ * verified before running the full controller firmware.
  *
  * Serial commands @ 115200 baud:
  *   f / F  -> jog all axes forward   (send s to stop)
  *   b / B  -> jog all axes backward  (send s to stop)
  *   s / S  -> stop
- *
- * Hardware: Arduino Mega 2560 + DM556 microstepper drivers, NEMA 23 (X/Y) +
- * Z-axis stepper. Pin map below is the CURRENT machine wiring (see
- * docs/hardware/pinout.md). NOTE: this supersedes the pin assignments listed
- * in Appendix E of the ME 195B final report, which are from an earlier revision.
  */
 
 #include <AccelStepper.h>
-
-// DM556 stepper driver pins (Pul+/Dir+) — current machine wiring.
-// step1 = X-axis, step2 = Y-axis, step3 = Z-axis.
-int Stepper1Pulse     = 27;   // X-axis Pul+ (purple)
-int Stepper1Direction = 25;   // X-axis Dir+ (yellow)
-
-int Stepper2Pulse     = 24;   // Y-axis Pul+ (green)
-int Stepper2Direction = 22;   // Y-axis Dir+ (blue)
-
-int Stepper3Pulse     = 23;   // Z-axis Pul+ (orange)
-int Stepper3Direction = 26;   // Z-axis Dir+ (white)
+#include "aegis_pins.h"
 
 const int jogSpeed = 800;
 const int jogAccel = 400;
 
-AccelStepper step1(1, Stepper1Pulse, Stepper1Direction);  // X
-AccelStepper step2(1, Stepper2Pulse, Stepper2Direction);  // Y
-AccelStepper step3(1, Stepper3Pulse, Stepper3Direction);  // Z
+AccelStepper step1(AccelStepper::DRIVER, AEGIS_X_STEP_PIN, AEGIS_X_DIR_PIN);  // X
+AccelStepper step2(AccelStepper::DRIVER, AEGIS_Y_STEP_PIN, AEGIS_Y_DIR_PIN);  // Y
+AccelStepper step3(AccelStepper::DRIVER, AEGIS_Z_STEP_PIN, AEGIS_Z_DIR_PIN);  // Z
 
 // 0 = stopped, 1 = forward, -1 = backward
 int direction = 0;
 
+bool limitHit(uint8_t pin) {
+  return digitalRead(pin) == HIGH;
+}
+
+bool limitsClearForDirection(int dir) {
+  if (dir >= 0) {
+    return true;
+  }
+  return !limitHit(AEGIS_X_LIMIT_PIN) &&
+         !limitHit(AEGIS_Y_LIMIT_PIN) &&
+         !limitHit(AEGIS_Z_LIMIT_PIN);
+}
+
+void setupAxis(AccelStepper &axis) {
+  axis.setMaxSpeed(jogSpeed);
+  axis.setAcceleration(jogAccel);
+}
+
 void setup() {
   Serial.begin(115200);
 
-  pinMode(Stepper1Pulse,     OUTPUT);
-  pinMode(Stepper1Direction, OUTPUT);
-  pinMode(Stepper2Pulse,     OUTPUT);
-  pinMode(Stepper2Direction, OUTPUT);
-  pinMode(Stepper3Pulse,     OUTPUT);
-  pinMode(Stepper3Direction, OUTPUT);
+  pinMode(AEGIS_X_LIMIT_PIN, INPUT);
+  pinMode(AEGIS_Y_LIMIT_PIN, INPUT);
+  pinMode(AEGIS_Z_LIMIT_PIN, INPUT);
 
-  step1.setMaxSpeed(jogSpeed);  step1.setAcceleration(jogAccel);
-  step2.setMaxSpeed(jogSpeed);  step2.setAcceleration(jogAccel);
-  step3.setMaxSpeed(jogSpeed);  step3.setAcceleration(jogAccel);
+  setupAxis(step1);
+  setupAxis(step2);
+  setupAxis(step3);
 
   Serial.println("Ready.");
   Serial.println("f = forward  b = backward  s = stop");
 }
 
 void setDirection(int dir) {
+  if (!limitsClearForDirection(dir)) {
+    Serial.println("Limit switch active. Refusing negative jog.");
+    dir = 0;
+  }
+
   direction = dir;
   if (dir == 1) {
     step1.move( 999999999L);
@@ -76,7 +81,6 @@ void setDirection(int dir) {
 }
 
 void loop() {
-  // Check for incoming character
   if (Serial.available() > 0) {
     char c = Serial.read();
     if (c == 'f' || c == 'F') {
@@ -89,6 +93,11 @@ void loop() {
       Serial.println("Stopped.");
       setDirection(0);
     }
+  }
+
+  if (direction < 0 && !limitsClearForDirection(direction)) {
+    Serial.println("Limit reached. Stopping.");
+    setDirection(0);
   }
 
   step1.run();

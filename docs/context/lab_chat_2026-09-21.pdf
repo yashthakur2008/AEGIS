@@ -1,0 +1,42 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 1744 >>
+stream
+BT /F1 10 Tf 50 760 Td 14 TL (AEGIS LAB CHAT CONTEXT) Tj T* () Tj T* (Captured: 2026-09-21) Tj T* () Tj T* (  SOURCE CHAT EXCERPT) Tj T* () Tj T* (Saketh Neeli: R u guys coming at 2 today?) Tj T* () Tj T* (Yash: I'll come around 3) Tj T* () Tj T* (Saketh Neeli: Im heading over now) Tj T* () Tj T* (Saketh Neeli: looking good) Tj T* () Tj T* (Overleaf shared: https://www.overleaf.com/5164493351kcwttdqxwfbk#d6b03c) Tj T* () Tj T* (Yash: Slide ur email @+14082396135) Tj T* () Tj T* (Shivaan Karanth: Karanthshivaan@gmail.com) Tj T* () Tj T* (Yash: Anyone going to the lab today?) Tj T* () Tj T* (Saketh Neeli: Going tmrw) Tj T* () Tj T* (Yash: I'll come tmrw as well. yo lets all hit up lab tmrw) Tj T* () Tj T* (Saketh Neeli: I cant come. Me and zaidi planned to record a movie next week) Tj T* () Tj T* (Yash: I worked on a abstract with him last week asw. movie? wdym) Tj T* () Tj T* (Saketh Neeli: Like a recording of the device working) Tj T* () Tj T* (Yash: ohh i see. is there anything in particular you want me to do tmrw) Tj T* () Tj T* (Saketh Neeli: Idk, im just working on the paper rn. Get some renders ready etc) Tj T* () Tj T* (Yash: cause i built an automation system that takes in cv and moves robot + manages plasma) Tj T* (intensity respectively. and i wanted to try load that onto the robot itself tmrw) Tj T* () Tj T* (Saketh Neeli: Cv?) Tj T* () Tj T* (Yash: yup. it translates that into a system of coordinates with marker data. i'll commit it) Tj T* (today) Tj T* () Tj T* (Saketh Neeli: Do we need a diff camera for that?) Tj T* () Tj T* (Yash: the pixy works just fine. i ended up using a degraded version of it, i'll ask zaidi if) Tj T* (we lidar sensors cause i can build a separate implemetation for that) Tj T* ET
+endstream
+endobj
+3 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+4 0 obj
+<< /Length 729 >>
+stream
+BT /F1 10 Tf 50 760 Td 14 TL () Tj T* (Shivaan Karanth: Yo good shit) Tj T* () Tj T* (Boyd: Boys Sorry I have lowkey been busy with college apps I'll come next weekend) Tj T* () Tj T* (  EXTRACTED TECHNICAL CONTEXT) Tj T* () Tj T* (- The team is preparing a paper/abstract and demo recording for AEGIS.) Tj T* (- Immediate software goal: use CV data to generate coordinates, move the robot, and modulate) Tj T* (plasma intensity.) Tj T* (- Current camera assumption: Pixy/Pixy2 is sufficient for a degraded implementation.) Tj T* (- Possible future sensor path: LiDAR/depth sensor implementation if hardware is available.) Tj T* (- Near-term lab task: get renders ready and load/test the automation system on the robot.) Tj T* ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>
+endobj
+7 0 obj
+<< /Type /Catalog /Pages 6 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000079 00000 n 
+0000001875 00000 n 
+0000002001 00000 n 
+0000002781 00000 n 
+0000002907 00000 n 
+0000002970 00000 n 
+trailer << /Size 8 /Root 7 0 R >>
+startxref
+3019
+%%EOF
