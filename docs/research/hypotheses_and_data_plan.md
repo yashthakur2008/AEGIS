@@ -166,6 +166,54 @@ This is enough to support an initial paper claim about a validated image-to-coor
 - Do not claim autonomous treatment is safe for humans. Phrase as bench-top phantom validation.
 - Do not imply plasma was safely applied unless the CAP driver, standoff, thermal monitoring, and interlocks are validated.
 
+## Manuscript scaffold
+
+Use this structure to turn the data plan into the paper quickly.
+
+### Working title
+
+**AEGIS: A Low-Cost Image-Guided Gantry for Safety-Constrained Adaptive Cold Atmospheric Plasma Treatment Planning**
+
+### Abstract skeleton
+
+- **Background:** CAP is promising for wound care, but fixed exposure workflows do not adapt to wound geometry or perception uncertainty.
+- **Objective:** Present a low-cost image-guided gantry workflow that converts wound-like detections into calibrated motion and safety-clamped plasma planning commands.
+- **Methods:** Use Pixy2/CV detections, pixel-to-mm calibration, a host planner, Arduino Mega gantry firmware, and phantom wound targets. Evaluate calibration error, command success, estimated coverage, dose monotonicity, and safety behavior.
+- **Results:** Fill in after lab data: calibration error, waypoint success rate, coverage improvement, intensity/dwell monotonicity, and safety test outcomes.
+- **Conclusion:** AEGIS supports bench-top image-guided adaptive CAP planning and provides a reproducible platform for future biological validation.
+
+### Introduction outline
+
+1. Clinical motivation: chronic wounds, infection control, and need for precise treatment.
+2. CAP background: antimicrobial and wound-healing relevance, with dose/safety challenges.
+3. Robotics gap: many CAP workflows are fixed-position or fixed-dose rather than geometry-aware.
+4. AEGIS contribution: low-cost camera-to-gantry-to-dose planning pipeline.
+5. Scope boundary: bench-top phantom validation, not clinical efficacy.
+
+### Methods outline
+
+1. Hardware: 3-axis gantry, Arduino Mega, stepper drivers, Pixy2/CV input, CAP head placeholder/control output.
+2. Software: `VisionDetection`, `AffineCalibration`, `TreatmentPlanner`, serial firmware protocol.
+3. Calibration: grid/marker procedure and error calculation.
+4. Planning: centroid/raster/contour strategy depending on what is tested.
+5. Safety controls: plasma disabled by default, confidence threshold, intensity clamp, STOP, limit switches.
+6. Metrics: calibration error, command success, coverage, path length, dwell/intensity, runtime, safety pass/fail.
+
+### Results outline
+
+- Calibration accuracy table and target-vs-observed plot.
+- Planner output table showing monotonic dose behavior.
+- Motion dry-run command success table.
+- Coverage comparison between centroid-only and raster/contour plans.
+- Safety checklist table.
+
+### Discussion outline
+
+- Interpret whether Pixy2/CV accuracy is sufficient for phantom treatment planning.
+- Explain how adaptive planning improves over fixed exposure.
+- Discuss limitations: no clinical data, CAP biological efficacy not tested, calibration sensitivity, hardware safety still needs full interlock validation.
+- Future work: local segmentation model, depth/LiDAR support, thermal feedback, microbial assays, live CAP characterization.
+
 ## Next code/data improvements
 
 - Add a `data/experiments/YYYY-MM-DD/` folder for raw CSVs and photos.
