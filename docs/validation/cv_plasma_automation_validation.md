@@ -58,18 +58,24 @@ pytest -q
 11 passed
 ```
 
-## Blocked hardware/firmware acceptance path
+## Firmware acceptance path
 
-The real firmware build command was attempted:
+PlatformIO was installed at user level and the real firmware build command was run:
 
 ```bash
+export PATH="$HOME/.local/bin:$PATH"
 pio run
 ```
 
 Observed result:
 
 ```text
-bash: pio: command not found
+PlatformIO Core, version 6.2.0
+Processing megaatmega2560 (platform: atmelavr; board: megaatmega2560; framework: arduino)
+Dependency Graph
+|-- AccelStepper @ 1.64.0
+Checking size .pio/build/megaatmega2560/firmware.elf
+========================= [SUCCESS] Took 8.41 seconds =========================
 ```
 
-So the PlatformIO compile/upload acceptance path is externally blocked in this environment. The firmware-side changes are still covered by static repository tests and docs checks, but final hardware validation requires installing PlatformIO, compiling `firmware/aegis_controller`, uploading to the Arduino Mega, and running a motion-only dry run before enabling plasma output.
+This confirms the Arduino Mega firmware compiles with the MOVE/PLASMA controller changes. The remaining hardware-only acceptance step is uploading to the physical Arduino Mega and running a motion-only gantry dry run before enabling the plasma output.
