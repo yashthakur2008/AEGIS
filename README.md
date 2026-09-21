@@ -13,9 +13,11 @@ detection, and safety features (emergency stop, IR temperature monitoring).
 
 ```
 firmware/
-  aegis_controller/  Coordinate-based controller firmware (HOME/MOVE/STOP/STATUS)
+  aegis_controller/  Coordinate-based controller firmware (HOME/MOVE/PLASMA/STOP/STATUS)
   jog_test/          Bench-test sketch — jogs all 3 axes via serial (f/b/s)
   lib/               Shared Arduino headers, including authoritative pin map
+host/
+  aegis_control/     Host-side CV/Pixy detection → calibrated MOVE/PLASMA planner
 docs/
   architecture/      Wound-to-coordinate pipeline notes
   ME-195B-Final-Report.pdf   Full project report (background + Appendix E firmware)
@@ -37,8 +39,21 @@ tests/
   Serial protocol at **115200 baud**:
   - `HOME`
   - `MOVE <x_mm> <y_mm> <z_mm>`
+  - `PLASMA <intensity_0_to_1> <dwell_ms>`
   - `STATUS`
   - `STOP`
+
+## Host CV planner
+
+The host-side planner turns Pixy2/CV detections into calibrated gantry commands:
+
+```bash
+python -m host.aegis_control.cli detections.csv \
+  --x-mm-per-px 0.5 --y-mm-per-px 0.5 \
+  --x-offset-mm 10 --y-offset-mm 12
+```
+
+Add `--emit-plasma` only after motion-only validation, CAP driver wiring, and safety interlocks are confirmed.
 
 - **`firmware/jog_test/`** — bring-up sketch to verify motor wiring, driver
   direction, and limit switches before running the full control firmware.
