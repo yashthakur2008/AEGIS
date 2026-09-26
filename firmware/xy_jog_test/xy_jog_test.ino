@@ -30,7 +30,7 @@ constexpr uint8_t Y_STEP_PIN = 5;
 constexpr uint8_t Y_DIR_PIN = 4;
 constexpr uint8_t PLASMA_PWM_PIN = 44; // unused safety output during jog test
 
-constexpr long NUDGE_STEPS = 80;
+constexpr long NUDGE_STEPS = 400;
 constexpr long JOG_SPEED = 250;
 constexpr long JOG_ACCEL = 200;
 
