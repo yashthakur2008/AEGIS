@@ -6,15 +6,28 @@ import json
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Protocol, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DASHBOARD_PATH = REPO_ROOT / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html"
 
 
-class PixyMonCaptureError(RuntimeError):
+class PixyFeedError(RuntimeError):
+    """Raised when the configured Pixy feed source cannot produce a frame."""
+
+
+class PixyMonCaptureError(PixyFeedError):
     """Raised when the PixyMon preview window cannot be captured."""
+
+
+class PixyFrameSource(Protocol):
+    name: str
+    mode: str
+
+    def capture_frame(self) -> bytes:
+        """Return a JPEG frame for the dashboard."""
 
 
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -56,8 +69,47 @@ def capture_pixymon_frame(app_name: str = "PixyMon") -> bytes:
             raise PixyMonCaptureError(str(exc)) from exc
 
 
+@dataclass
+class PixyMonFrameSource:
+    app_name: str = "PixyMon"
+    name: str = "PixyMon window capture"
+    mode: str = "pixymon-window"
+
+    def capture_frame(self) -> bytes:
+        return capture_pixymon_frame(self.app_name)
+
+
+@dataclass
+class DirectPixyFrameSource:
+    """Future direct Pixy2/OpenCV source.
+
+    Pixy2 is not a UVC webcam, so OpenCV cannot open it with VideoCapture like a
+    normal USB camera. The direct source will need libpixyusb2 or the Pixy2
+    Python USB API to obtain raw frames, then optionally encode them with
+    OpenCV. This placeholder makes the dashboard/server contract stable while
+    that lower-level USB bridge is added later.
+    """
+
+    name: str = "Direct Pixy2 USB feed"
+    mode: str = "direct-pixy2-pending"
+
+    def capture_frame(self) -> bytes:
+        raise PixyFeedError(
+            "direct Pixy2 feed is not implemented yet; use --source pixymon until libpixyusb2/Pixy2 Python API is wired"
+        )
+
+
+def make_source(source: str, app_name: str) -> PixyFrameSource:
+    if source == "pixymon":
+        return PixyMonFrameSource(app_name=app_name)
+    if source == "direct":
+        return DirectPixyFrameSource()
+    raise ValueError(f"unknown Pixy source: {source}")
+
+
 class PixyDashboardHandler(http.server.SimpleHTTPRequestHandler):
-    app_name = "PixyMon"
+    frame_source: PixyFrameSource = PixyMonFrameSource()
+    stream_delay_seconds = 0.2
 
     def log_message(self, format: str, *args: object) -> None:
         timestamp = time.strftime("%H:%M:%S")
@@ -71,8 +123,11 @@ class PixyDashboardHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/pixy-frame.jpg":
             self._send_pixy_frame()
             return
+        if path == "/pixy-stream.mjpg":
+            self._send_pixy_stream()
+            return
         if path == "/pixy-status.json":
-            self._send_json({"ok": True, "source": self.app_name})
+            self._send_json({"ok": True, "source": self.frame_source.name, "mode": self.frame_source.mode})
             return
         self.send_error(404, "Not found")
 
@@ -89,39 +144,75 @@ class PixyDashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
+    def _capture_or_error(self) -> bytes:
+        try:
+            return self.frame_source.capture_frame()
+        except PixyFeedError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive platform boundary
+            raise PixyFeedError(str(exc)) from exc
+
     def _send_pixy_frame(self) -> None:
         try:
-            body = capture_pixymon_frame(self.app_name)
-        except PixyMonCaptureError as exc:
-            self._send_json({"ok": False, "error": str(exc)}, status=503)
+            body = self._capture_or_error()
+        except PixyFeedError as exc:
+            self._send_json({"ok": False, "source": self.frame_source.name, "error": str(exc)}, status=503)
             return
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Cache-Control", "no-store, max-age=0")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_pixy_stream(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=pixyframe")
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        while True:
+            try:
+                body = self._capture_or_error()
+                self.wfile.write(b"--pixyframe\r\n")
+                self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                self.wfile.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii"))
+                self.wfile.write(body)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+                time.sleep(self.stream_delay_seconds)
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            except PixyFeedError as exc:
+                print(f"Pixy feed error: {exc}")
+                time.sleep(1.0)
 
-def serve(host: str, port: int, app_name: str) -> None:
-    PixyDashboardHandler.app_name = app_name
+
+def serve(host: str, port: int, source: PixyFrameSource, stream_fps: float) -> None:
+    PixyDashboardHandler.frame_source = source
+    PixyDashboardHandler.stream_delay_seconds = 1.0 / max(stream_fps, 0.1)
     server = http.server.ThreadingHTTPServer((host, port), PixyDashboardHandler)
     print(f"Serving AEGIS dashboard at http://{host}:{port}/dashboard")
-    print(f"Pixy source: visible {app_name} window via /pixy-frame.jpg")
+    print(f"Pixy source: {source.name} ({source.mode})")
+    print("Dashboard endpoints: /pixy-stream.mjpg, /pixy-frame.jpg, /pixy-status.json")
     server.serve_forever()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Serve the AEGIS dashboard with the PixyMon camera feed.")
+    parser = argparse.ArgumentParser(description="Serve the AEGIS dashboard with a Pixy feed.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--app-name", default="PixyMon", help="macOS process/window name for PixyMon.")
+    parser.add_argument("--source", choices=["pixymon", "direct"], default="pixymon")
+    parser.add_argument("--app-name", default="PixyMon", help="macOS process/window name when --source pixymon is used.")
+    parser.add_argument("--stream-fps", type=float, default=5.0, help="MJPEG dashboard stream refresh rate.")
     args = parser.parse_args()
-    serve(args.host, args.port, args.app_name)
+    serve(args.host, args.port, make_source(args.source, args.app_name), args.stream_fps)
 
 
 if __name__ == "__main__":

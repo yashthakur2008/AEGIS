@@ -67,13 +67,13 @@ supersedes the (outdated) pin assignments in Appendix E of the final report.
 
 ## Pixy camera dashboard
 
-The browser dashboard should mirror the PixyMon/Pixy2 view, not the laptop webcam. On macOS, open PixyMon first so its detection window is visible, then run:
+The browser dashboard should mirror the Pixy/PixyMon view, not the laptop webcam. Pixy2 is not a UVC webcam, so the current bridge serves a local MJPEG stream from PixyMon while keeping the dashboard contract ready for a later direct Pixy2/OpenCV/libpixyusb2 source. On macOS, open PixyMon first so its detection window is visible, then run:
 
 ```bash
-python -m host.aegis_control.pixymon_bridge
+python -m host.aegis_control.pixymon_bridge --source pixymon
 ```
 
-Open `http://127.0.0.1:8765/dashboard` and click **Start Pixy Feed**. The dashboard polls `/pixy-frame.jpg`, which is a local bridge snapshot of the visible PixyMon window, so the wound signature overlay from PixyMon is what appears in the dashboard.
+Open `http://127.0.0.1:8765/dashboard` and click **Start Pixy Feed**. The dashboard uses `/pixy-stream.mjpg` for live viewing and `/pixy-frame.jpg` for single-frame checks. A future direct Pixy2 path can be exposed with the same dashboard once libpixyusb2 or the Pixy2 Python USB API is wired into the bridge.
 
 ## Architecture
 

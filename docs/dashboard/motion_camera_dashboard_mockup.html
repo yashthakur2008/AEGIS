@@ -186,16 +186,16 @@
         <div class="marker-box"></div>
       </div>
       <div class="camera-controls">
-        <label style="flex: 1 1 260px;">Pixy bridge frame URL
-          <input id="pixyFrameUrl" value="http://127.0.0.1:8765/pixy-frame.jpg" />
+        <label style="flex: 1 1 260px;">Pixy bridge stream URL
+          <input id="pixyStreamUrl" value="http://127.0.0.1:8765/pixy-stream.mjpg" />
         </label>
         <button id="startCamera" class="primary">Start Pixy Feed</button>
         <button id="stopCamera">Stop Feed</button>
       </div>
       <div class="row">
         <div class="metric"><span>Feed</span><b id="feedState">Waiting</b></div>
-        <div class="metric"><span>Resolution</span><b id="resolutionState">PixyMon</b></div>
-        <div class="metric"><span>Mode</span><b>Pixy CV overlay</b></div>
+        <div class="metric"><span>Resolution</span><b id="resolutionState">MJPEG</b></div>
+        <div class="metric"><span>Mode</span><b id="sourceMode">Pixy bridge</b></div>
       </div>
       <p class="warning">Safety rule: this mirrors the PixyMon detection view, including the wound signature overlay. Keep CAP/plasma power disconnected during walking/jog testing.</p>
     </section>
@@ -252,10 +252,11 @@
     const cameraStatus = document.getElementById('cameraStatus');
     const cameraFrame = document.getElementById('cameraFrame');
     const pixyImage = document.getElementById('pixyImage');
-    const pixyFrameUrl = document.getElementById('pixyFrameUrl');
+    const pixyStreamUrl = document.getElementById('pixyStreamUrl');
     const startCamera = document.getElementById('startCamera');
     const stopCamera = document.getElementById('stopCamera');
     const feedState = document.getElementById('feedState');
+    const sourceMode = document.getElementById('sourceMode');
     const log = document.getElementById('log');
     let pixyTimer;
     let consecutivePixyErrors = 0;
@@ -273,8 +274,19 @@
       feedState.textContent = state === 'live' ? 'Live' : state === 'error' ? 'Error' : 'Waiting';
     }
 
+    function statusUrl() {
+      try {
+        const url = new URL(pixyStreamUrl.value.trim() || 'http://127.0.0.1:8765/pixy-stream.mjpg', window.location.href);
+        url.pathname = '/pixy-status.json';
+        url.search = '';
+        return url.toString();
+      } catch {
+        return 'http://127.0.0.1:8765/pixy-status.json';
+      }
+    }
+
     function nextPixyUrl() {
-      const base = pixyFrameUrl.value.trim() || 'http://127.0.0.1:8765/pixy-frame.jpg';
+      const base = pixyStreamUrl.value.trim() || 'http://127.0.0.1:8765/pixy-stream.mjpg';
       const separator = base.includes('?') ? '&' : '?';
       return `${base}${separator}t=${Date.now()}`;
     }
@@ -283,12 +295,24 @@
       pixyImage.src = nextPixyUrl();
     }
 
+    async function refreshPixyStatus() {
+      try {
+        const response = await fetch(statusUrl(), { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const status = await response.json();
+        sourceMode.textContent = status.mode || status.source || 'Pixy bridge';
+      } catch (error) {
+        addLog(`Pixy status unavailable: ${error.message}`);
+      }
+    }
+
     function startPixyFeed() {
       stopPixyFeed(false);
-      setCameraState('waiting', 'Pixy feed: requesting frame from bridge');
+      consecutivePixyErrors = 0;
+      setCameraState('waiting', 'Pixy feed: connecting to bridge stream');
+      refreshPixyStatus();
       requestPixyFrame();
-      pixyTimer = window.setInterval(requestPixyFrame, 1000);
-      addLog('Pixy feed polling started from PixyMon bridge');
+      addLog('Pixy MJPEG stream connected from bridge');
     }
 
     function stopPixyFeed(writeLog = true) {
@@ -313,8 +337,8 @@
         return;
       }
       cameraFrame.classList.remove('streaming');
-      setCameraState('error', 'Pixy feed: bridge unavailable. Check http://127.0.0.1:8765/pixy-frame.jpg');
-      addLog('Pixy frame failed 3 times. Reload the dashboard or restart the bridge if the direct frame URL does not open.');
+      setCameraState('error', 'Pixy feed: bridge unavailable. Check http://127.0.0.1:8765/pixy-stream.mjpg');
+      addLog('Pixy stream failed 3 times. Reload the dashboard or restart the bridge if the direct stream URL does not open.');
     });
 
     function updatePosition(command) {
