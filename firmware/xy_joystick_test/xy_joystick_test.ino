@@ -42,8 +42,8 @@ constexpr uint8_t UNUSED_PLASMA_SAFE_PIN = 44;
 
 constexpr int DEFAULT_CENTER = 512;
 constexpr int JOY_DEADZONE = 150;
-constexpr float MAX_SPEED_STEPS_PER_S = 450.0f;
-constexpr float ACCEL_STEPS_PER_S2 = 350.0f;
+constexpr float MAX_SPEED_STEPS_PER_S = 20250.0f;
+constexpr float ACCEL_STEPS_PER_S2 = 13500.0f;
 constexpr unsigned long STATUS_PERIOD_MS = 250;
 
 AccelStepper xMotor(AccelStepper::DRIVER, X_STEP_PIN, X_DIR_PIN);
