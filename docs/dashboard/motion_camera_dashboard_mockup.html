@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AEGIS Motion + PC Camera Dashboard</title>
+  <title>AEGIS Motion + Pixy Camera Dashboard</title>
   <style>
     :root {
       color-scheme: dark;
@@ -96,16 +96,17 @@
       overflow: hidden;
     }
 
-    video {
+    .pixy-feed {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       opacity: 0;
       transition: opacity 180ms ease;
+      background: #000;
     }
-    .camera.streaming video { opacity: 1; }
+    .camera.streaming .pixy-feed { opacity: 1; }
     .placeholder {
       color: rgba(236,243,255,0.72);
       font-weight: 700;
@@ -168,35 +169,35 @@
 <body>
   <header>
     <div>
-      <h1>AEGIS Motion + PC Camera Dashboard</h1>
-      <div class="subtle">Browser dashboard using the laptop/PC camera. PixyMon can stay closed.</div>
+      <h1>AEGIS Motion + Pixy Camera Dashboard</h1>
+      <div class="subtle">Browser dashboard mirrors the PixyMon/Pixy2 feed. It does not use the laptop webcam.</div>
     </div>
-    <div class="status-pill"><span id="cameraDot" class="dot"></span><span id="cameraStatus">Camera: waiting for browser permission</span></div>
+    <div class="status-pill"><span id="cameraDot" class="dot"></span><span id="cameraStatus">Pixy feed: waiting for bridge</span></div>
   </header>
 
   <main>
     <section class="card">
-      <h2>Camera Feed <span class="subtle">PC webcam / USB camera sync</span></h2>
-      <div id="cameraFrame" class="camera" aria-label="live browser camera feed">
-        <video id="cameraVideo" autoplay playsinline muted></video>
-        <div class="placeholder">CLICK “START PC CAMERA” TO SYNC THE DASHBOARD</div>
+      <h2>Camera Feed <span class="subtle">PixyMon / Pixy2 stream</span></h2>
+      <div id="cameraFrame" class="camera" aria-label="live PixyMon camera feed">
+        <img id="pixyImage" class="pixy-feed" alt="PixyMon camera frame" />
+        <div class="placeholder">START PIXY BRIDGE, THEN CLICK “START PIXY FEED”</div>
         <div class="crosshair"></div>
         <div class="wound-box"></div>
         <div class="marker-box"></div>
       </div>
       <div class="camera-controls">
-        <label style="flex: 1 1 260px;">Camera source
-          <select id="cameraSelect"><option value="">Default camera</option></select>
+        <label style="flex: 1 1 260px;">Pixy bridge frame URL
+          <input id="pixyFrameUrl" value="/pixy-frame.jpg" />
         </label>
-        <button id="startCamera" class="primary">Start PC Camera</button>
-        <button id="stopCamera">Stop Camera</button>
+        <button id="startCamera" class="primary">Start Pixy Feed</button>
+        <button id="stopCamera">Stop Feed</button>
       </div>
       <div class="row">
         <div class="metric"><span>Feed</span><b id="feedState">Waiting</b></div>
-        <div class="metric"><span>Resolution</span><b id="resolutionState">-</b></div>
-        <div class="metric"><span>Mode</span><b>Browser CV-ready</b></div>
+        <div class="metric"><span>Resolution</span><b id="resolutionState">PixyMon</b></div>
+        <div class="metric"><span>Mode</span><b>Pixy CV overlay</b></div>
       </div>
-      <p class="warning">Safety rule: camera sync only previews the field of view. Keep CAP/plasma power disconnected during walking/jog testing.</p>
+      <p class="warning">Safety rule: this mirrors the PixyMon detection view, including the wound signature overlay. Keep CAP/plasma power disconnected during walking/jog testing.</p>
     </section>
 
     <aside class="card">
@@ -250,14 +251,13 @@
     const cameraDot = document.getElementById('cameraDot');
     const cameraStatus = document.getElementById('cameraStatus');
     const cameraFrame = document.getElementById('cameraFrame');
-    const cameraVideo = document.getElementById('cameraVideo');
-    const cameraSelect = document.getElementById('cameraSelect');
+    const pixyImage = document.getElementById('pixyImage');
+    const pixyFrameUrl = document.getElementById('pixyFrameUrl');
     const startCamera = document.getElementById('startCamera');
     const stopCamera = document.getElementById('stopCamera');
     const feedState = document.getElementById('feedState');
-    const resolutionState = document.getElementById('resolutionState');
     const log = document.getElementById('log');
-    let stream;
+    let pixyTimer;
     let positions = { x: 0, y: 0, z: 4 };
 
     function addLog(message) {
@@ -272,62 +272,42 @@
       feedState.textContent = state === 'live' ? 'Live' : state === 'error' ? 'Error' : 'Waiting';
     }
 
-    async function listCameras() {
-      if (!navigator.mediaDevices?.enumerateDevices) return;
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoInputs = devices.filter(device => device.kind === 'videoinput');
-      cameraSelect.innerHTML = '<option value="">Default camera</option>';
-      videoInputs.forEach((device, index) => {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        option.textContent = device.label || `Camera ${index + 1}`;
-        cameraSelect.appendChild(option);
-      });
+    function nextPixyUrl() {
+      const base = pixyFrameUrl.value.trim() || '/pixy-frame.jpg';
+      const separator = base.includes('?') ? '&' : '?';
+      return `${base}${separator}t=${Date.now()}`;
     }
 
-    async function syncCamera() {
-      try {
-        stopCurrentStream();
-        setCameraState('waiting', 'Camera: requesting browser permission');
-        const constraints = {
-          video: {
-            deviceId: cameraSelect.value ? { exact: cameraSelect.value } : undefined,
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            frameRate: { ideal: 30 }
-          },
-          audio: false
-        };
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-        cameraVideo.srcObject = stream;
-        await cameraVideo.play();
-        cameraFrame.classList.add('streaming');
-        const track = stream.getVideoTracks()[0];
-        const settings = track.getSettings();
-        resolutionState.textContent = `${settings.width || cameraVideo.videoWidth}×${settings.height || cameraVideo.videoHeight}`;
-        setCameraState('live', `Camera: synced to ${track.label || 'PC camera'}`);
-        addLog(`PC camera synced: ${track.label || 'default camera'}`);
-        await listCameras();
-      } catch (error) {
-        setCameraState('error', `Camera: ${error.message}`);
-        cameraFrame.classList.remove('streaming');
-        addLog(`Camera sync failed: ${error.message}`);
-      }
+    function requestPixyFrame() {
+      pixyImage.src = nextPixyUrl();
     }
 
-    function stopCurrentStream() {
-      if (stream) stream.getTracks().forEach(track => track.stop());
-      stream = undefined;
-      cameraVideo.srcObject = null;
+    function startPixyFeed() {
+      stopPixyFeed(false);
+      setCameraState('waiting', 'Pixy feed: requesting frame from bridge');
+      requestPixyFrame();
+      pixyTimer = window.setInterval(requestPixyFrame, 250);
+      addLog('Pixy feed polling started from PixyMon bridge');
+    }
+
+    function stopPixyFeed(writeLog = true) {
+      if (pixyTimer) window.clearInterval(pixyTimer);
+      pixyTimer = undefined;
       cameraFrame.classList.remove('streaming');
-      resolutionState.textContent = '-';
+      pixyImage.removeAttribute('src');
+      setCameraState('waiting', 'Pixy feed: stopped');
+      if (writeLog) addLog('Pixy feed stopped');
     }
 
-    function stopCameraFeed() {
-      stopCurrentStream();
-      setCameraState('waiting', 'Camera: stopped');
-      addLog('PC camera feed stopped');
-    }
+    pixyImage.addEventListener('load', () => {
+      cameraFrame.classList.add('streaming');
+      setCameraState('live', 'Pixy feed: synced from PixyMon');
+    });
+
+    pixyImage.addEventListener('error', () => {
+      cameraFrame.classList.remove('streaming');
+      setCameraState('error', 'Pixy feed: bridge unavailable or PixyMon not visible');
+    });
 
     function updatePosition(command) {
       const step = Number(document.getElementById('jogStep').value);
@@ -345,16 +325,15 @@
       addLog(`Walking/jog command queued for firmware: ${command}`);
     }
 
-    startCamera.addEventListener('click', syncCamera);
-    stopCamera.addEventListener('click', stopCameraFeed);
-    cameraSelect.addEventListener('change', () => { if (stream) syncCamera(); });
+    startCamera.addEventListener('click', startPixyFeed);
+    stopCamera.addEventListener('click', () => stopPixyFeed(true));
     document.querySelectorAll('[data-command]').forEach(button => {
       button.addEventListener('click', () => updatePosition(button.dataset.command));
     });
 
     addLog('Dashboard loaded in browser');
-    addLog('Click Start PC Camera to sync laptop/USB camera without PixyMon');
-    listCameras().catch(error => addLog(`Camera list unavailable: ${error.message}`));
+    addLog('Run: python -m host.aegis_control.pixymon_bridge');
+    addLog('Keep PixyMon open and visible so the bridge can mirror the Pixy2 detection feed');
   </script>
 </body>
 </html>

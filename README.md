@@ -65,6 +65,16 @@ The pin map in the sketches reflects the **current hardware wiring**, documented
 in [`docs/hardware/pinout.md`](docs/hardware/pinout.md). Note that this
 supersedes the (outdated) pin assignments in Appendix E of the final report.
 
+## Pixy camera dashboard
+
+The browser dashboard should mirror the PixyMon/Pixy2 view, not the laptop webcam. On macOS, open PixyMon first so its detection window is visible, then run:
+
+```bash
+python -m host.aegis_control.pixymon_bridge
+```
+
+Open `http://127.0.0.1:8765/dashboard` and click **Start Pixy Feed**. The dashboard polls `/pixy-frame.jpg`, which is a local bridge snapshot of the visible PixyMon window, so the wound signature overlay from PixyMon is what appears in the dashboard.
+
 ## Architecture
 
 See [`docs/architecture/wound_to_coordinate_pipeline.md`](docs/architecture/wound_to_coordinate_pipeline.md)
