@@ -24,11 +24,11 @@
 #include <AccelStepper.h>
 
 // Current AEGIS pin map from firmware/lib/aegis_pins.h
-constexpr uint8_t X_STEP_PIN = 27;
-constexpr uint8_t X_DIR_PIN = 25;
-constexpr uint8_t Y_STEP_PIN = 24;
-constexpr uint8_t Y_DIR_PIN = 22;
-constexpr uint8_t PLASMA_PWM_PIN = 6;
+constexpr uint8_t X_STEP_PIN = 7;
+constexpr uint8_t X_DIR_PIN = 6;
+constexpr uint8_t Y_STEP_PIN = 5;
+constexpr uint8_t Y_DIR_PIN = 4;
+constexpr uint8_t PLASMA_PWM_PIN = 44; // unused safety output during jog test
 
 constexpr long NUDGE_STEPS = 80;
 constexpr long JOG_SPEED = 250;
@@ -86,6 +86,7 @@ void setup() {
   xMotor.setMaxSpeed(JOG_SPEED);
   yMotor.setMaxSpeed(JOG_SPEED);
   xMotor.setAcceleration(JOG_ACCEL);
+  yMotor.setMaxSpeed(JOG_SPEED);
   yMotor.setAcceleration(JOG_ACCEL);
   printHelp();
   printStatus();
