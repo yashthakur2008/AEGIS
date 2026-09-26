@@ -3,12 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AEGIS Motion + Camera Dashboard Mockup</title>
+  <title>AEGIS Motion + PC Camera Dashboard</title>
   <style>
     :root {
       color-scheme: dark;
       --bg: #0b1020;
-      --panel: #111a2e;
       --panel-2: #16243d;
       --text: #ecf3ff;
       --muted: #98a9c6;
@@ -35,6 +34,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 16px;
+      flex-wrap: wrap;
     }
 
     h1 { margin: 0; font-size: 22px; letter-spacing: 0.02em; }
@@ -49,7 +49,9 @@
       background: rgba(255,255,255,0.06);
       font-size: 13px;
     }
-    .dot { width: 9px; height: 9px; border-radius: 99px; background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+    .dot { width: 9px; height: 9px; border-radius: 99px; background: var(--warn); box-shadow: 0 0 12px var(--warn); }
+    .dot.live { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+    .dot.error { background: var(--danger); box-shadow: 0 0 12px var(--danger); }
 
     main {
       display: grid;
@@ -94,147 +96,122 @@
       overflow: hidden;
     }
 
-    .camera::before {
-      content: "LIVE CAMERA FEED PLACEHOLDER";
+    video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 180ms ease;
+    }
+    .camera.streaming video { opacity: 1; }
+    .placeholder {
       color: rgba(236,243,255,0.72);
       font-weight: 700;
       letter-spacing: 0.12em;
       font-size: 14px;
+      text-align: center;
+      padding: 18px;
+      z-index: 1;
     }
-    .crosshair, .wound-box, .marker-box { position: absolute; border-radius: 8px; }
+    .camera.streaming .placeholder { display: none; }
+    .crosshair, .wound-box, .marker-box { position: absolute; border-radius: 8px; z-index: 2; pointer-events: none; }
     .crosshair {
       width: 32px; height: 32px;
       border: 2px solid var(--accent);
-      left: 48%; top: 46%;
+      left: calc(50% - 16px); top: calc(50% - 16px);
     }
-    .crosshair::before, .crosshair::after {
-      content: ""; position: absolute; background: var(--accent);
-    }
+    .crosshair::before, .crosshair::after { content: ""; position: absolute; background: var(--accent); }
     .crosshair::before { width: 46px; height: 2px; left: -8px; top: 13px; }
     .crosshair::after { width: 2px; height: 46px; left: 13px; top: -8px; }
-    .wound-box {
-      left: 58%; top: 34%; width: 120px; height: 86px;
-      border: 3px solid var(--warn);
-      box-shadow: 0 0 22px rgba(255,209,102,0.28);
-    }
-    .wound-box::after { content: "wound sig"; position: absolute; left: 8px; top: -26px; color: var(--warn); font-size: 12px; }
-    .marker-box {
-      left: 22%; top: 62%; width: 56px; height: 56px;
-      border: 3px solid var(--ok);
-    }
-    .marker-box::after { content: "marker"; position: absolute; left: 4px; top: -24px; color: var(--ok); font-size: 12px; }
+    .wound-box { left: 58%; top: 34%; width: 120px; height: 86px; border: 3px solid var(--warn); box-shadow: 0 0 22px rgba(255,209,102,0.28); }
+    .wound-box::after { content: "target zone"; position: absolute; left: 8px; top: -26px; color: var(--warn); font-size: 12px; }
+    .marker-box { left: 22%; top: 62%; width: 56px; height: 56px; border: 3px solid var(--ok); }
+    .marker-box::after { content: "fiducial"; position: absolute; left: 4px; top: -24px; color: var(--ok); font-size: 12px; }
 
-    .row { display: flex; gap: 12px; flex-wrap: wrap; padding: 0 18px 18px; }
-    .metric {
-      flex: 1 1 130px;
-      background: rgba(255,255,255,0.045);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-    }
+    .row, .camera-controls { display: flex; gap: 12px; flex-wrap: wrap; padding: 0 18px 18px; }
+    .metric { flex: 1 1 130px; background: rgba(255,255,255,0.045); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
     .metric b { display: block; font-size: 20px; margin-top: 4px; }
     .metric span { color: var(--muted); font-size: 12px; }
 
     .controls { padding: 18px; display: grid; gap: 16px; }
-    .control-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(74px, 1fr));
-      gap: 10px;
-    }
+    .control-grid { display: grid; grid-template-columns: repeat(3, minmax(74px, 1fr)); gap: 10px; }
     button {
       border: 1px solid var(--border);
       border-radius: 14px;
       color: var(--text);
       background: var(--panel-2);
-      min-height: 58px;
-      font-size: 16px;
+      min-height: 48px;
+      font-size: 15px;
       font-weight: 750;
-      cursor: default;
+      cursor: pointer;
       box-shadow: inset 0 1px rgba(255,255,255,0.08);
     }
     button.primary { background: linear-gradient(180deg, #1e6091, #123b63); border-color: rgba(76,201,240,0.45); }
     button.stop { background: linear-gradient(180deg, #9d174d, #5f0f2d); border-color: rgba(255,92,122,0.65); }
     button.home { background: linear-gradient(180deg, #31624f, #1b4436); border-color: rgba(72,213,151,0.48); }
     button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
 
     .span-3 { grid-column: span 3; }
     .empty { visibility: hidden; }
-
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     label { color: var(--muted); font-size: 12px; display: grid; gap: 6px; }
-    input, select {
-      background: rgba(255,255,255,0.06);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 11px;
-      font: inherit;
-    }
+    input, select { background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 11px; font: inherit; }
 
-    .log {
-      height: 180px;
-      overflow: auto;
-      background: #060a13;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-      color: #b8f7d4;
-      font-family: "SFMono-Regular", Consolas, monospace;
-      font-size: 12px;
-      line-height: 1.5;
-    }
-
-    .warning {
-      margin: 0 18px 18px;
-      padding: 12px;
-      border-radius: 12px;
-      background: rgba(255,209,102,0.1);
-      border: 1px solid rgba(255,209,102,0.35);
-      color: #ffe6a1;
-      font-size: 13px;
-    }
-
+    .log { height: 180px; overflow: auto; background: #060a13; border: 1px solid var(--border); border-radius: 12px; padding: 12px; color: #b8f7d4; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+    .warning { margin: 0 18px 18px; padding: 12px; border-radius: 12px; background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.35); color: #ffe6a1; font-size: 13px; }
     @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>AEGIS Motion + Camera Dashboard</h1>
-      <div class="subtle">Mockup for motion-only bring-up. Plasma intentionally omitted.</div>
+      <h1>AEGIS Motion + PC Camera Dashboard</h1>
+      <div class="subtle">Browser dashboard using the laptop/PC camera. PixyMon can stay closed.</div>
     </div>
-    <div class="status-pill"><span class="dot"></span> Arduino: /dev/cu.usbmodem11201</div>
+    <div class="status-pill"><span id="cameraDot" class="dot"></span><span id="cameraStatus">Camera: waiting for browser permission</span></div>
   </header>
 
   <main>
     <section class="card">
-      <h2>Camera Feed <span class="subtle">Pixy / USB preview target</span></h2>
-      <div class="camera" aria-label="camera feed placeholder">
+      <h2>Camera Feed <span class="subtle">PC webcam / USB camera sync</span></h2>
+      <div id="cameraFrame" class="camera" aria-label="live browser camera feed">
+        <video id="cameraVideo" autoplay playsinline muted></video>
+        <div class="placeholder">CLICK “START PC CAMERA” TO SYNC THE DASHBOARD</div>
         <div class="crosshair"></div>
         <div class="wound-box"></div>
         <div class="marker-box"></div>
       </div>
-      <div class="row">
-        <div class="metric"><span>Feed</span><b>Waiting</b></div>
-        <div class="metric"><span>Wound signature</span><b>2</b></div>
-        <div class="metric"><span>Marker signature</span><b>1</b></div>
+      <div class="camera-controls">
+        <label style="flex: 1 1 260px;">Camera source
+          <select id="cameraSelect"><option value="">Default camera</option></select>
+        </label>
+        <button id="startCamera" class="primary">Start PC Camera</button>
+        <button id="stopCamera">Stop Camera</button>
       </div>
-      <p class="warning">Bring-up rule: verify camera feed and signatures first. Keep CAP/plasma power disconnected.</p>
+      <div class="row">
+        <div class="metric"><span>Feed</span><b id="feedState">Waiting</b></div>
+        <div class="metric"><span>Resolution</span><b id="resolutionState">-</b></div>
+        <div class="metric"><span>Mode</span><b>Browser CV-ready</b></div>
+      </div>
+      <p class="warning">Safety rule: camera sync only previews the field of view. Keep CAP/plasma power disconnected during walking/jog testing.</p>
     </section>
 
     <aside class="card">
-      <h2>Manual Jog Controls <span class="subtle">motion-only</span></h2>
+      <h2>Manual Jog Controls <span class="subtle">motion-only walking test</span></h2>
       <div class="controls">
         <div class="form-grid">
           <label>Jog step
-            <select>
-              <option>1 mm</option>
-              <option selected>5 mm</option>
-              <option>10 mm</option>
+            <select id="jogStep">
+              <option value="1">1 mm</option>
+              <option value="5" selected>5 mm</option>
+              <option value="10">10 mm</option>
             </select>
           </label>
           <label>Speed limit
-            <select>
+            <select id="speedLimit">
               <option selected>Slow</option>
               <option>Medium</option>
             </select>
@@ -243,41 +220,141 @@
 
         <div class="control-grid" aria-label="jog controls">
           <button class="empty">.</button>
-          <button class="primary">↑ Y+</button>
+          <button class="primary" data-command="Y+">↑ Y+</button>
           <button class="empty">.</button>
-          <button class="primary">← X-</button>
-          <button class="stop">STOP</button>
-          <button class="primary">X+ →</button>
+          <button class="primary" data-command="X-">← X-</button>
+          <button class="stop" data-command="STOP">STOP</button>
+          <button class="primary" data-command="X+">X+ →</button>
           <button class="empty">.</button>
-          <button class="primary">↓ Y-</button>
+          <button class="primary" data-command="Y-">↓ Y-</button>
           <button class="empty">.</button>
-          <button class="home span-3">HOME / LIMIT-SWITCH ZERO</button>
-          <button class="primary">Z Up</button>
-          <button class="primary">Status</button>
-          <button class="primary">Z Down</button>
+          <button class="home span-3" data-command="HOME">HOME / LIMIT-SWITCH ZERO</button>
+          <button class="primary" data-command="Z+">Z Up</button>
+          <button class="primary" data-command="STATUS">Status</button>
+          <button class="primary" data-command="Z-">Z Down</button>
         </div>
 
         <div class="form-grid">
-          <label>X position
-            <input value="0.000 mm" readonly />
-          </label>
-          <label>Y position
-            <input value="0.000 mm" readonly />
-          </label>
-          <label>Z position
-            <input value="4.000 mm" readonly />
-          </label>
-          <label>Last command
-            <input value="STATUS" readonly />
-          </label>
+          <label>X position <input id="xPos" value="0.000 mm" readonly /></label>
+          <label>Y position <input id="yPos" value="0.000 mm" readonly /></label>
+          <label>Z position <input id="zPos" value="4.000 mm" readonly /></label>
+          <label>Last command <input id="lastCommand" value="STATUS" readonly /></label>
         </div>
 
-        <div class="log">[22:20:00] Dashboard mockup loaded
-[22:20:01] Arduino candidate: /dev/cu.usbmodem11201
-[22:20:02] Waiting for camera feed attach
-[22:20:03] Manual jog disabled until operator confirms clear travel</div>
+        <div id="log" class="log"></div>
       </div>
     </aside>
   </main>
+
+  <script>
+    const cameraDot = document.getElementById('cameraDot');
+    const cameraStatus = document.getElementById('cameraStatus');
+    const cameraFrame = document.getElementById('cameraFrame');
+    const cameraVideo = document.getElementById('cameraVideo');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const startCamera = document.getElementById('startCamera');
+    const stopCamera = document.getElementById('stopCamera');
+    const feedState = document.getElementById('feedState');
+    const resolutionState = document.getElementById('resolutionState');
+    const log = document.getElementById('log');
+    let stream;
+    let positions = { x: 0, y: 0, z: 4 };
+
+    function addLog(message) {
+      const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+      log.textContent += `[${timestamp}] ${message}\n`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function setCameraState(state, message) {
+      cameraDot.className = `dot ${state === 'live' ? 'live' : state === 'error' ? 'error' : ''}`;
+      cameraStatus.textContent = message;
+      feedState.textContent = state === 'live' ? 'Live' : state === 'error' ? 'Error' : 'Waiting';
+    }
+
+    async function listCameras() {
+      if (!navigator.mediaDevices?.enumerateDevices) return;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter(device => device.kind === 'videoinput');
+      cameraSelect.innerHTML = '<option value="">Default camera</option>';
+      videoInputs.forEach((device, index) => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = device.label || `Camera ${index + 1}`;
+        cameraSelect.appendChild(option);
+      });
+    }
+
+    async function syncCamera() {
+      try {
+        stopCurrentStream();
+        setCameraState('waiting', 'Camera: requesting browser permission');
+        const constraints = {
+          video: {
+            deviceId: cameraSelect.value ? { exact: cameraSelect.value } : undefined,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 }
+          },
+          audio: false
+        };
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        cameraVideo.srcObject = stream;
+        await cameraVideo.play();
+        cameraFrame.classList.add('streaming');
+        const track = stream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        resolutionState.textContent = `${settings.width || cameraVideo.videoWidth}×${settings.height || cameraVideo.videoHeight}`;
+        setCameraState('live', `Camera: synced to ${track.label || 'PC camera'}`);
+        addLog(`PC camera synced: ${track.label || 'default camera'}`);
+        await listCameras();
+      } catch (error) {
+        setCameraState('error', `Camera: ${error.message}`);
+        cameraFrame.classList.remove('streaming');
+        addLog(`Camera sync failed: ${error.message}`);
+      }
+    }
+
+    function stopCurrentStream() {
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      stream = undefined;
+      cameraVideo.srcObject = null;
+      cameraFrame.classList.remove('streaming');
+      resolutionState.textContent = '-';
+    }
+
+    function stopCameraFeed() {
+      stopCurrentStream();
+      setCameraState('waiting', 'Camera: stopped');
+      addLog('PC camera feed stopped');
+    }
+
+    function updatePosition(command) {
+      const step = Number(document.getElementById('jogStep').value);
+      if (command === 'X+') positions.x += step;
+      if (command === 'X-') positions.x -= step;
+      if (command === 'Y+') positions.y += step;
+      if (command === 'Y-') positions.y -= step;
+      if (command === 'Z+') positions.z += step;
+      if (command === 'Z-') positions.z -= step;
+      if (command === 'HOME') positions = { x: 0, y: 0, z: 4 };
+      document.getElementById('xPos').value = `${positions.x.toFixed(3)} mm`;
+      document.getElementById('yPos').value = `${positions.y.toFixed(3)} mm`;
+      document.getElementById('zPos').value = `${positions.z.toFixed(3)} mm`;
+      document.getElementById('lastCommand').value = command;
+      addLog(`Walking/jog command queued for firmware: ${command}`);
+    }
+
+    startCamera.addEventListener('click', syncCamera);
+    stopCamera.addEventListener('click', stopCameraFeed);
+    cameraSelect.addEventListener('change', () => { if (stream) syncCamera(); });
+    document.querySelectorAll('[data-command]').forEach(button => {
+      button.addEventListener('click', () => updatePosition(button.dataset.command));
+    });
+
+    addLog('Dashboard loaded in browser');
+    addLog('Click Start PC Camera to sync laptop/USB camera without PixyMon');
+    listCameras().catch(error => addLog(`Camera list unavailable: ${error.message}`));
+  </script>
 </body>
 </html>
