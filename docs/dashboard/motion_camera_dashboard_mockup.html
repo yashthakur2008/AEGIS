@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AEGIS Motion + Camera Dashboard Mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #111a2e;
+      --panel-2: #16243d;
+      --text: #ecf3ff;
+      --muted: #98a9c6;
+      --accent: #4cc9f0;
+      --ok: #48d597;
+      --warn: #ffd166;
+      --danger: #ff5c7a;
+      --border: rgba(255,255,255,0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #16264c, var(--bg) 42%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 20px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    h1 { margin: 0; font-size: 22px; letter-spacing: 0.02em; }
+    .subtle { color: var(--muted); font-size: 13px; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      font-size: 13px;
+    }
+    .dot { width: 9px; height: 9px; border-radius: 99px; background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 1.4fr) minmax(320px, 0.9fr);
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 22px 60px rgba(0,0,0,0.28);
+      overflow: hidden;
+    }
+
+    .card h2 {
+      margin: 0;
+      padding: 16px 18px;
+      font-size: 15px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.035);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .camera {
+      aspect-ratio: 16 / 10;
+      margin: 18px;
+      border-radius: 14px;
+      border: 1px solid rgba(76,201,240,0.4);
+      background:
+        linear-gradient(rgba(76,201,240,0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(76,201,240,0.08) 1px, transparent 1px),
+        radial-gradient(circle at center, rgba(76,201,240,0.14), rgba(0,0,0,0.38) 42%, rgba(0,0,0,0.68));
+      background-size: 32px 32px, 32px 32px, 100% 100%;
+      position: relative;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .camera::before {
+      content: "LIVE CAMERA FEED PLACEHOLDER";
+      color: rgba(236,243,255,0.72);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      font-size: 14px;
+    }
+    .crosshair, .wound-box, .marker-box { position: absolute; border-radius: 8px; }
+    .crosshair {
+      width: 32px; height: 32px;
+      border: 2px solid var(--accent);
+      left: 48%; top: 46%;
+    }
+    .crosshair::before, .crosshair::after {
+      content: ""; position: absolute; background: var(--accent);
+    }
+    .crosshair::before { width: 46px; height: 2px; left: -8px; top: 13px; }
+    .crosshair::after { width: 2px; height: 46px; left: 13px; top: -8px; }
+    .wound-box {
+      left: 58%; top: 34%; width: 120px; height: 86px;
+      border: 3px solid var(--warn);
+      box-shadow: 0 0 22px rgba(255,209,102,0.28);
+    }
+    .wound-box::after { content: "wound sig"; position: absolute; left: 8px; top: -26px; color: var(--warn); font-size: 12px; }
+    .marker-box {
+      left: 22%; top: 62%; width: 56px; height: 56px;
+      border: 3px solid var(--ok);
+    }
+    .marker-box::after { content: "marker"; position: absolute; left: 4px; top: -24px; color: var(--ok); font-size: 12px; }
+
+    .row { display: flex; gap: 12px; flex-wrap: wrap; padding: 0 18px 18px; }
+    .metric {
+      flex: 1 1 130px;
+      background: rgba(255,255,255,0.045);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .metric b { display: block; font-size: 20px; margin-top: 4px; }
+    .metric span { color: var(--muted); font-size: 12px; }
+
+    .controls { padding: 18px; display: grid; gap: 16px; }
+    .control-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(74px, 1fr));
+      gap: 10px;
+    }
+    button {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      color: var(--text);
+      background: var(--panel-2);
+      min-height: 58px;
+      font-size: 16px;
+      font-weight: 750;
+      cursor: default;
+      box-shadow: inset 0 1px rgba(255,255,255,0.08);
+    }
+    button.primary { background: linear-gradient(180deg, #1e6091, #123b63); border-color: rgba(76,201,240,0.45); }
+    button.stop { background: linear-gradient(180deg, #9d174d, #5f0f2d); border-color: rgba(255,92,122,0.65); }
+    button.home { background: linear-gradient(180deg, #31624f, #1b4436); border-color: rgba(72,213,151,0.48); }
+    button:active { transform: translateY(1px); }
+
+    .span-3 { grid-column: span 3; }
+    .empty { visibility: hidden; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { color: var(--muted); font-size: 12px; display: grid; gap: 6px; }
+    input, select {
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 11px;
+      font: inherit;
+    }
+
+    .log {
+      height: 180px;
+      overflow: auto;
+      background: #060a13;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      color: #b8f7d4;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .warning {
+      margin: 0 18px 18px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255,209,102,0.1);
+      border: 1px solid rgba(255,209,102,0.35);
+      color: #ffe6a1;
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>AEGIS Motion + Camera Dashboard</h1>
+      <div class="subtle">Mockup for motion-only bring-up. Plasma intentionally omitted.</div>
+    </div>
+    <div class="status-pill"><span class="dot"></span> Arduino: /dev/cu.usbmodem11201</div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Camera Feed <span class="subtle">Pixy / USB preview target</span></h2>
+      <div class="camera" aria-label="camera feed placeholder">
+        <div class="crosshair"></div>
+        <div class="wound-box"></div>
+        <div class="marker-box"></div>
+      </div>
+      <div class="row">
+        <div class="metric"><span>Feed</span><b>Waiting</b></div>
+        <div class="metric"><span>Wound signature</span><b>2</b></div>
+        <div class="metric"><span>Marker signature</span><b>1</b></div>
+      </div>
+      <p class="warning">Bring-up rule: verify camera feed and signatures first. Keep CAP/plasma power disconnected.</p>
+    </section>
+
+    <aside class="card">
+      <h2>Manual Jog Controls <span class="subtle">motion-only</span></h2>
+      <div class="controls">
+        <div class="form-grid">
+          <label>Jog step
+            <select>
+              <option>1 mm</option>
+              <option selected>5 mm</option>
+              <option>10 mm</option>
+            </select>
+          </label>
+          <label>Speed limit
+            <select>
+              <option selected>Slow</option>
+              <option>Medium</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="control-grid" aria-label="jog controls">
+          <button class="empty">.</button>
+          <button class="primary">↑ Y+</button>
+          <button class="empty">.</button>
+          <button class="primary">← X-</button>
+          <button class="stop">STOP</button>
+          <button class="primary">X+ →</button>
+          <button class="empty">.</button>
+          <button class="primary">↓ Y-</button>
+          <button class="empty">.</button>
+          <button class="home span-3">HOME / LIMIT-SWITCH ZERO</button>
+          <button class="primary">Z Up</button>
+          <button class="primary">Status</button>
+          <button class="primary">Z Down</button>
+        </div>
+
+        <div class="form-grid">
+          <label>X position
+            <input value="0.000 mm" readonly />
+          </label>
+          <label>Y position
+            <input value="0.000 mm" readonly />
+          </label>
+          <label>Z position
+            <input value="4.000 mm" readonly />
+          </label>
+          <label>Last command
+            <input value="STATUS" readonly />
+          </label>
+        </div>
+
+        <div class="log">[22:20:00] Dashboard mockup loaded
+[22:20:01] Arduino candidate: /dev/cu.usbmodem11201
+[22:20:02] Waiting for camera feed attach
+[22:20:03] Manual jog disabled until operator confirms clear travel</div>
+      </div>
+    </aside>
+  </main>
+</body>
+</html>
