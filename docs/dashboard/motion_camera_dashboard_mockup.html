@@ -187,7 +187,7 @@
       </div>
       <div class="camera-controls">
         <label style="flex: 1 1 260px;">Pixy bridge frame URL
-          <input id="pixyFrameUrl" value="/pixy-frame.jpg" />
+          <input id="pixyFrameUrl" value="http://127.0.0.1:8765/pixy-frame.jpg" />
         </label>
         <button id="startCamera" class="primary">Start Pixy Feed</button>
         <button id="stopCamera">Stop Feed</button>
@@ -258,6 +258,7 @@
     const feedState = document.getElementById('feedState');
     const log = document.getElementById('log');
     let pixyTimer;
+    let consecutivePixyErrors = 0;
     let positions = { x: 0, y: 0, z: 4 };
 
     function addLog(message) {
@@ -273,7 +274,7 @@
     }
 
     function nextPixyUrl() {
-      const base = pixyFrameUrl.value.trim() || '/pixy-frame.jpg';
+      const base = pixyFrameUrl.value.trim() || 'http://127.0.0.1:8765/pixy-frame.jpg';
       const separator = base.includes('?') ? '&' : '?';
       return `${base}${separator}t=${Date.now()}`;
     }
@@ -286,7 +287,7 @@
       stopPixyFeed(false);
       setCameraState('waiting', 'Pixy feed: requesting frame from bridge');
       requestPixyFrame();
-      pixyTimer = window.setInterval(requestPixyFrame, 250);
+      pixyTimer = window.setInterval(requestPixyFrame, 1000);
       addLog('Pixy feed polling started from PixyMon bridge');
     }
 
@@ -300,13 +301,20 @@
     }
 
     pixyImage.addEventListener('load', () => {
+      consecutivePixyErrors = 0;
       cameraFrame.classList.add('streaming');
       setCameraState('live', 'Pixy feed: synced from PixyMon');
     });
 
     pixyImage.addEventListener('error', () => {
+      consecutivePixyErrors += 1;
+      if (consecutivePixyErrors < 3) {
+        setCameraState('waiting', 'Pixy feed: retrying bridge frame');
+        return;
+      }
       cameraFrame.classList.remove('streaming');
-      setCameraState('error', 'Pixy feed: bridge unavailable or PixyMon not visible');
+      setCameraState('error', 'Pixy feed: bridge unavailable. Check http://127.0.0.1:8765/pixy-frame.jpg');
+      addLog('Pixy frame failed 3 times. Reload the dashboard or restart the bridge if the direct frame URL does not open.');
     });
 
     function updatePosition(command) {
@@ -334,6 +342,7 @@
     addLog('Dashboard loaded in browser');
     addLog('Run: python -m host.aegis_control.pixymon_bridge');
     addLog('Keep PixyMon open and visible so the bridge can mirror the Pixy2 detection feed');
+    window.setTimeout(startPixyFeed, 250);
   </script>
 </body>
 </html>
