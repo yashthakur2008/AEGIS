@@ -128,19 +128,14 @@
       z-index: 1;
     }
     .camera.streaming .placeholder, .camera.browser-streaming .placeholder { display: none; }
-    .crosshair, .wound-box, .marker-box { position: absolute; border-radius: 8px; z-index: 2; pointer-events: none; }
-    .crosshair {
-      width: 32px; height: 32px;
-      border: 2px solid var(--accent);
-      left: calc(50% - 16px); top: calc(50% - 16px);
+    .detection-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none;
     }
-    .crosshair::before, .crosshair::after { content: ""; position: absolute; background: var(--accent); }
-    .crosshair::before { width: 46px; height: 2px; left: -8px; top: 13px; }
-    .crosshair::after { width: 2px; height: 46px; left: 13px; top: -8px; }
-    .wound-box { left: 58%; top: 34%; width: 120px; height: 86px; border: 3px solid var(--warn); box-shadow: 0 0 22px rgba(255,209,102,0.28); }
-    .wound-box::after { content: "target zone"; position: absolute; left: 8px; top: -26px; color: var(--warn); font-size: 12px; }
-    .marker-box { left: 22%; top: 62%; width: 56px; height: 56px; border: 3px solid var(--ok); }
-    .marker-box::after { content: "fiducial"; position: absolute; left: 4px; top: -24px; color: var(--ok); font-size: 12px; }
 
     .row, .camera-controls { display: flex; gap: 12px; flex-wrap: wrap; padding: 0 18px 18px; }
     .metric { flex: 1 1 130px; background: rgba(255,255,255,0.045); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
@@ -192,10 +187,8 @@
       <div id="cameraFrame" class="camera" aria-label="live PixyMon camera feed">
         <img id="pixyImage" class="pixy-feed" alt="PixyMon camera frame" />
         <video id="browserVideo" class="browser-video" autoplay playsinline muted></video>
-        <div class="placeholder">START A CAMERA SERVER, THEN CLICK “START FEED”</div>
-        <div class="crosshair"></div>
-        <div class="wound-box"></div>
-        <div class="marker-box"></div>
+        <canvas id="detectionOverlay" class="detection-overlay"></canvas>
+        <div class="placeholder">SELECT LAPTOP CV, ALLOW CAMERA, THEN SHOW A WOUND IMAGE</div>
       </div>
       <div class="camera-controls">
         <label>Feed source
@@ -207,7 +200,7 @@
         <label style="flex: 1 1 260px;">Pixy bridge stream URL
           <input id="pixyStreamUrl" value="http://127.0.0.1:8765/pixy-stream.mjpg" />
         </label>
-        <label style="flex: 1 1 260px;">Laptop CV frame URL
+        <label style="flex: 1 1 260px;">Optional server CV frame URL
           <input id="cvFrameUrl" value="http://127.0.0.1:8766/cv-frame.jpg" />
         </label>
         <button id="startCamera" class="primary">Start Feed</button>
@@ -274,6 +267,8 @@
     const cameraFrame = document.getElementById('cameraFrame');
     const pixyImage = document.getElementById('pixyImage');
     const browserVideo = document.getElementById('browserVideo');
+    const detectionOverlay = document.getElementById('detectionOverlay');
+    const overlayContext = detectionOverlay.getContext('2d');
     const feedSource = document.getElementById('feedSource');
     const pixyStreamUrl = document.getElementById('pixyStreamUrl');
     const cvFrameUrl = document.getElementById('cvFrameUrl');
@@ -287,6 +282,9 @@
     let consecutivePixyErrors = 0;
     let frameInFlight = false;
     let browserStream;
+    let detectionTimer;
+    const analysisCanvas = document.createElement('canvas');
+    const analysisContext = analysisCanvas.getContext('2d', { willReadFrequently: true });
     let positions = { x: 0, y: 0, z: 4 };
 
     function addLog(message) {
@@ -402,6 +400,9 @@
         browserStream.getTracks().forEach(track => track.stop());
         browserStream = undefined;
       }
+      if (detectionTimer) window.clearInterval(detectionTimer);
+      detectionTimer = undefined;
+      clearDetectionOverlay();
       browserVideo.srcObject = null;
       setCameraState('waiting', 'Camera feed: stopped');
       detectionState.textContent = '0';
@@ -422,13 +423,88 @@
         await browserVideo.play();
         cameraFrame.classList.add('browser-streaming');
         setCameraState('live', 'Laptop CV: browser camera live');
-        sourceMode.textContent = 'browser-getUserMedia';
-        detectionState.textContent = 'manual';
-        addLog('Laptop browser camera permission granted. Current wound CV overlay is visual/manual until trained weights are connected.');
+        sourceMode.textContent = 'browser-red-segmentation';
+        detectionState.textContent = '0';
+        resizeDetectionOverlay();
+        detectionTimer = window.setInterval(detectWoundInBrowserFrame, 250);
+        addLog('Laptop browser camera permission granted. Running browser-side red wound segmentation.');
       } catch (error) {
         setCameraState('error', `Laptop CV camera unavailable: ${error.message}`);
         addLog(`Browser camera failed: ${error.message}`);
       }
+    }
+
+    function resizeDetectionOverlay() {
+      const rect = cameraFrame.getBoundingClientRect();
+      detectionOverlay.width = Math.max(1, Math.round(rect.width));
+      detectionOverlay.height = Math.max(1, Math.round(rect.height));
+    }
+
+    function clearDetectionOverlay() {
+      resizeDetectionOverlay();
+      overlayContext.clearRect(0, 0, detectionOverlay.width, detectionOverlay.height);
+    }
+
+    function detectWoundInBrowserFrame() {
+      if (!browserVideo.videoWidth || !browserVideo.videoHeight) return;
+      const sampleWidth = 320;
+      const sampleHeight = Math.round(sampleWidth * browserVideo.videoHeight / browserVideo.videoWidth);
+      analysisCanvas.width = sampleWidth;
+      analysisCanvas.height = sampleHeight;
+      analysisContext.drawImage(browserVideo, 0, 0, sampleWidth, sampleHeight);
+      const pixels = analysisContext.getImageData(0, 0, sampleWidth, sampleHeight).data;
+      let minX = sampleWidth;
+      let minY = sampleHeight;
+      let maxX = -1;
+      let maxY = -1;
+      let redPixels = 0;
+      for (let y = 0; y < sampleHeight; y += 1) {
+        for (let x = 0; x < sampleWidth; x += 1) {
+          const offset = (y * sampleWidth + x) * 4;
+          const r = pixels[offset];
+          const g = pixels[offset + 1];
+          const b = pixels[offset + 2];
+          const redness = r - Math.max(g, b);
+          const saturation = r - Math.min(g, b);
+          const brightEnough = r > 95 && g > 35 && b > 25;
+          if (brightEnough && redness > 18 && saturation > 35 && r > g * 1.12 && r > b * 1.12) {
+            redPixels += 1;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      }
+
+      resizeDetectionOverlay();
+      overlayContext.clearRect(0, 0, detectionOverlay.width, detectionOverlay.height);
+      const areaRatio = redPixels / (sampleWidth * sampleHeight);
+      if (redPixels < 180 || areaRatio < 0.002) {
+        detectionState.textContent = '0';
+        return;
+      }
+
+      const scaleX = detectionOverlay.width / sampleWidth;
+      const scaleY = detectionOverlay.height / sampleHeight;
+      const x = minX * scaleX;
+      const y = minY * scaleY;
+      const w = (maxX - minX) * scaleX;
+      const h = (maxY - minY) * scaleY;
+      const confidence = Math.min(0.95, 0.35 + areaRatio * 18);
+      overlayContext.strokeStyle = '#ffd166';
+      overlayContext.lineWidth = 4;
+      overlayContext.shadowColor = 'rgba(255, 209, 102, 0.45)';
+      overlayContext.shadowBlur = 12;
+      overlayContext.strokeRect(x, y, w, h);
+      overlayContext.shadowBlur = 0;
+      overlayContext.fillStyle = '#ffd166';
+      overlayContext.font = 'bold 16px system-ui, sans-serif';
+      overlayContext.fillText(`wound candidate ${(confidence * 100).toFixed(0)}%`, x + 6, Math.max(20, y - 8));
+      overlayContext.beginPath();
+      overlayContext.arc(x + w / 2, y + h / 2, 5, 0, Math.PI * 2);
+      overlayContext.fill();
+      detectionState.textContent = '1';
     }
 
     pixyImage.addEventListener('load', () => {
