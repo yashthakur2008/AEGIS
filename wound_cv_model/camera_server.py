@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import http.server
 import json
 import threading
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2  # type: ignore[import-not-found]
+import numpy as np
 
 from .detection import WoundDetection
 from .inference import build_detector, draw_detections, encode_jpeg
@@ -90,6 +92,24 @@ class CameraState:
             "count": len(self.last_detections),
         }
 
+    def detect_uploaded_jpeg(self, body: bytes) -> dict[str, object]:
+        encoded = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if encoded is None:
+            self.last_error = "Uploaded browser frame could not be decoded"
+            raise RuntimeError(self.last_error)
+        detections = self.detector.detect(encoded)
+        self.last_detections = detections
+        self.frames_served += 1
+        self.last_error = None
+        annotated = encode_jpeg(draw_detections(encoded, detections))
+        return {
+            "ok": True,
+            "mode": "browser-camera-trained-yolo",
+            "detections": [detection.to_dict() for detection in detections],
+            "count": len(detections),
+            "annotated_jpeg_base64": base64.b64encode(annotated).decode("ascii"),
+        }
+
 
 class WoundCvHandler(http.server.SimpleHTTPRequestHandler):
     camera_state: CameraState = CameraState()
@@ -113,6 +133,20 @@ class WoundCvHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(self.camera_state.status())
             return
         self.send_error(404, "Not found")
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        if path != "/cv-detect-frame":
+            self.send_error(404, "Not found")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length <= 0:
+                raise RuntimeError("No browser frame was uploaded")
+            body = self.rfile.read(length)
+            self._send_json(self.camera_state.detect_uploaded_jpeg(body))
+        except Exception as exc:
+            self._send_json({"ok": False, "error": str(exc), **self.camera_state.status()}, status=503)
 
     def _send_file(self, path: Path, content_type: str) -> None:
         body = path.read_bytes()

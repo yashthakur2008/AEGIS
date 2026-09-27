@@ -315,6 +315,7 @@
 
     function statusUrl() { return sourceUrl(feedSource.value === 'cv' ? '/cv-status.json' : '/pixy-status.json'); }
     function detectionsUrl() { return sourceUrl('/cv-detections.json'); }
+    function detectFrameUrl() { return sourceUrl('/cv-detect-frame'); }
 
     function nextPixyUrl() {
       const base = feedSource.value === 'cv'
@@ -372,6 +373,10 @@
       stopPixyFeed(false);
       consecutivePixyErrors = 0;
       const label = feedSource.value === 'cv' ? 'Trained wound CV' : 'Pixy feed';
+      if (feedSource.value === 'cv') {
+        startBrowserCamera();
+        return;
+      }
       setCameraState('waiting', feedSource.value === 'cv' ? `${label}: connecting to trained local server stream` : `${label}: connecting to bridge stream`);
       refreshPixyStatus();
       requestPixyFrame();
@@ -404,7 +409,7 @@
 
     async function startBrowserCamera() {
       try {
-        setCameraState('waiting', 'Laptop CV: requesting browser camera permission');
+        setCameraState('waiting', 'Trained wound CV: requesting browser camera permission');
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error('Browser camera API is unavailable on this page');
         }
@@ -414,16 +419,50 @@
         });
         browserVideo.srcObject = browserStream;
         await browserVideo.play();
-        cameraFrame.classList.add('browser-streaming');
-        setCameraState('live', 'Laptop CV: browser camera live');
-        sourceMode.textContent = 'browser-red-segmentation';
+        cameraFrame.classList.add('streaming');
+        setCameraState('live', 'Trained wound CV: browser camera feeding YOLO server');
+        sourceMode.textContent = 'browser-camera-trained-yolo';
         detectionState.textContent = '0';
         resizeDetectionOverlay();
-        detectionTimer = window.setInterval(detectWoundInBrowserFrame, 250);
-        addLog('Laptop browser camera permission granted. Running browser-side red wound segmentation.');
+        await sendBrowserFrameToServer();
+        detectionTimer = window.setInterval(sendBrowserFrameToServer, 500);
+        addLog('Browser camera permission granted. Sending frames to trained YOLO server.');
       } catch (error) {
-        setCameraState('error', `Laptop CV camera unavailable: ${error.message}`);
+        setCameraState('error', `Trained wound CV camera unavailable: ${error.message}`);
         addLog(`Browser camera failed: ${error.message}`);
+      }
+    }
+
+    async function sendBrowserFrameToServer() {
+      if (!browserVideo.videoWidth || !browserVideo.videoHeight) return;
+      const sampleWidth = 640;
+      const sampleHeight = Math.round(sampleWidth * browserVideo.videoHeight / browserVideo.videoWidth);
+      analysisCanvas.width = sampleWidth;
+      analysisCanvas.height = sampleHeight;
+      analysisContext.drawImage(browserVideo, 0, 0, sampleWidth, sampleHeight);
+      const blob = await new Promise(resolve => analysisCanvas.toBlob(resolve, 'image/jpeg', 0.86));
+      if (!blob) return;
+      try {
+        const response = await fetch(detectFrameUrl(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/jpeg' },
+          body: blob,
+          cache: 'no-store',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        detectionState.textContent = String(payload.count ?? 0);
+        sourceMode.textContent = payload.mode || 'browser-camera-trained-yolo';
+        if (payload.annotated_jpeg_base64) {
+          pixyImage.src = `data:image/jpeg;base64,${payload.annotated_jpeg_base64}`;
+          cameraFrame.classList.add('streaming');
+        }
+        const first = (payload.detections || [])[0];
+        if (first) {
+          addLog(`YOLO target: x=${first.centroid_x_px.toFixed(1)} y=${first.centroid_y_px.toFixed(1)} confidence=${Number(first.confidence).toFixed(2)} zHint=${first.depth_hint || 'surface'}`);
+        }
+      } catch (error) {
+        addLog(`Trained YOLO frame inference unavailable: ${error.message}`);
       }
     }
 
