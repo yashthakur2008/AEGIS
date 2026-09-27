@@ -28,6 +28,7 @@ class CameraState:
     detector: Any = field(init=False)
     capture: Any = field(default=None, init=False)
     camera_lock: threading.Lock = field(default_factory=threading.Lock, init=False)
+    inference_lock: threading.Lock = field(default_factory=threading.Lock, init=False)
     last_detections: list[WoundDetection] = field(default_factory=list)
     last_error: str | None = None
     frames_served: int = 0
@@ -93,22 +94,23 @@ class CameraState:
         }
 
     def detect_uploaded_jpeg(self, body: bytes) -> dict[str, object]:
-        encoded = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
-        if encoded is None:
-            self.last_error = "Uploaded browser frame could not be decoded"
-            raise RuntimeError(self.last_error)
-        detections = self.detector.detect(encoded)
-        self.last_detections = detections
-        self.frames_served += 1
-        self.last_error = None
-        annotated = encode_jpeg(draw_detections(encoded, detections))
-        return {
-            "ok": True,
-            "mode": "browser-camera-trained-yolo",
-            "detections": [detection.to_dict() for detection in detections],
-            "count": len(detections),
-            "annotated_jpeg_base64": base64.b64encode(annotated).decode("ascii"),
-        }
+        with self.inference_lock:
+            encoded = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if encoded is None:
+                self.last_error = "Uploaded browser frame could not be decoded"
+                raise RuntimeError(self.last_error)
+            detections = self.detector.detect(encoded)
+            self.last_detections = detections
+            self.frames_served += 1
+            self.last_error = None
+            annotated = encode_jpeg(draw_detections(encoded, detections))
+            return {
+                "ok": True,
+                "mode": "browser-camera-trained-yolo",
+                "detections": [detection.to_dict() for detection in detections],
+                "count": len(detections),
+                "annotated_jpeg_base64": base64.b64encode(annotated).decode("ascii"),
+            }
 
 
 class WoundCvHandler(http.server.SimpleHTTPRequestHandler):

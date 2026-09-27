@@ -283,6 +283,9 @@
     let frameInFlight = false;
     let browserStream;
     let detectionTimer;
+    let browserInferenceInFlight = false;
+    let browserInferenceQueued = false;
+    let lastBrowserInferenceMs = 0;
     const analysisCanvas = document.createElement('canvas');
     const analysisContext = analysisCanvas.getContext('2d', { willReadFrequently: true });
     let positions = { x: 0, y: 0, z: 4 };
@@ -400,6 +403,8 @@
       }
       if (detectionTimer) window.clearInterval(detectionTimer);
       detectionTimer = undefined;
+      browserInferenceInFlight = false;
+      browserInferenceQueued = false;
       clearDetectionOverlay();
       browserVideo.srcObject = null;
       setCameraState('waiting', 'Camera feed: stopped');
@@ -424,8 +429,8 @@
         sourceMode.textContent = 'browser-camera-trained-yolo';
         detectionState.textContent = '0';
         resizeDetectionOverlay();
-        await sendBrowserFrameToServer();
-        detectionTimer = window.setInterval(sendBrowserFrameToServer, 500);
+        queueBrowserFrameInference();
+        detectionTimer = window.setInterval(queueBrowserFrameInference, 350);
         addLog('Browser camera permission granted. Sending frames to trained YOLO server.');
       } catch (error) {
         setCameraState('error', `Trained wound CV camera unavailable: ${error.message}`);
@@ -435,14 +440,17 @@
 
     async function sendBrowserFrameToServer() {
       if (!browserVideo.videoWidth || !browserVideo.videoHeight) return;
-      const sampleWidth = 640;
-      const sampleHeight = Math.round(sampleWidth * browserVideo.videoHeight / browserVideo.videoWidth);
-      analysisCanvas.width = sampleWidth;
-      analysisCanvas.height = sampleHeight;
-      analysisContext.drawImage(browserVideo, 0, 0, sampleWidth, sampleHeight);
-      const blob = await new Promise(resolve => analysisCanvas.toBlob(resolve, 'image/jpeg', 0.86));
-      if (!blob) return;
+      browserInferenceInFlight = true;
+      browserInferenceQueued = false;
+      lastBrowserInferenceMs = Date.now();
       try {
+        const sampleWidth = 640;
+        const sampleHeight = Math.round(sampleWidth * browserVideo.videoHeight / browserVideo.videoWidth);
+        analysisCanvas.width = sampleWidth;
+        analysisCanvas.height = sampleHeight;
+        analysisContext.drawImage(browserVideo, 0, 0, sampleWidth, sampleHeight);
+        const blob = await new Promise(resolve => analysisCanvas.toBlob(resolve, 'image/jpeg', 0.86));
+        if (!blob) return;
         const response = await fetch(detectFrameUrl(), {
           method: 'POST',
           headers: { 'Content-Type': 'image/jpeg' },
@@ -463,7 +471,27 @@
         }
       } catch (error) {
         addLog(`Trained YOLO frame inference unavailable: ${error.message}`);
+      } finally {
+        browserInferenceInFlight = false;
+        if (browserInferenceQueued && browserStream) {
+          window.setTimeout(queueBrowserFrameInference, 0);
+        }
       }
+    }
+
+    function queueBrowserFrameInference() {
+      if (!browserStream) return;
+      if (browserInferenceInFlight) {
+        browserInferenceQueued = true;
+        return;
+      }
+      const elapsed = Date.now() - lastBrowserInferenceMs;
+      if (elapsed < 250) {
+        browserInferenceQueued = true;
+        window.setTimeout(queueBrowserFrameInference, 250 - elapsed);
+        return;
+      }
+      sendBrowserFrameToServer();
     }
 
     function resizeDetectionOverlay() {
