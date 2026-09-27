@@ -1,9 +1,11 @@
 import sys
 from pathlib import Path
+from io import StringIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from host.aegis_control import AffineCalibration, PlasmaPolicy, TreatmentPlanner, VisionDetection
+from host.aegis_control.cli import emit_or_send_commands
 
 
 def test_affine_calibration_converts_pixy_centroid_to_machine_point():
@@ -35,3 +37,19 @@ def test_treatment_planner_emits_motion_and_plasma_commands():
     waypoint = planner.plan_detection(VisionDetection(12.3456, 7.0, 5000, confidence=1.0))
     assert waypoint.move_command() == "MOVE 12.346 7.000 4.000"
     assert waypoint.plasma_command() == "PLASMA 0.750 2000"
+
+
+def test_cli_emit_or_send_commands_prints_motion_only_plan():
+    output = StringIO()
+    planner = TreatmentPlanner(AffineCalibration.from_scale_offset(x_mm_per_px=0.5, y_mm_per_px=0.25))
+
+    emit_or_send_commands(
+        [VisionDetection(100, 80, 1200)],
+        planner,
+        emit_plasma=False,
+        serial_port=None,
+        baud=115200,
+        output=output,
+    )
+
+    assert output.getvalue().splitlines() == ["HOME", "MOVE 50.000 20.000 4.000", "STATUS"]

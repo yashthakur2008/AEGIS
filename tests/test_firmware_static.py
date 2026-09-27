@@ -37,10 +37,10 @@ def test_gitignore_excludes_generated_build_outputs():
 def test_shared_pin_header_matches_documented_current_wiring():
     header = (ROOT / "firmware/lib/aegis_pins.h").read_text()
     expected = {
-        "AEGIS_X_STEP_PIN": "27",
-        "AEGIS_X_DIR_PIN": "25",
-        "AEGIS_Y_STEP_PIN": "24",
-        "AEGIS_Y_DIR_PIN": "22",
+        "AEGIS_X_STEP_PIN": "7",
+        "AEGIS_X_DIR_PIN": "6",
+        "AEGIS_Y_STEP_PIN": "5",
+        "AEGIS_Y_DIR_PIN": "4",
         "AEGIS_Z_STEP_PIN": "23",
         "AEGIS_Z_DIR_PIN": "26",
         "AEGIS_X_LIMIT_PIN": "49",

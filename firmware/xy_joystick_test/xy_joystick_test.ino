@@ -134,8 +134,8 @@ void setup() {
   pinMode(UNUSED_PLASMA_SAFE_PIN, OUTPUT);
   analogWrite(UNUSED_PLASMA_SAFE_PIN, 0);
 
-  xMotor.setMaxSpeed(MAX_SPEED_STEPS_PER_S);
-  yMotor.setMaxSpeed(MAX_SPEED_STEPS_PER_S);
+  xMotor.setMaxSpeed(MAX_SPEED_STEPS_PER_S * 10);
+  yMotor.setMaxSpeed(MAX_SPEED_STEPS_PER_S * 10);
   xMotor.setAcceleration(ACCEL_STEPS_PER_S2);
   yMotor.setAcceleration(ACCEL_STEPS_PER_S2);
 

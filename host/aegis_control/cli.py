@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+from typing import TextIO
 
 from .calibration import AffineCalibration
 from .planner import PlasmaPolicy, TreatmentPlanner, VisionDetection
+from .serial_client import AegisSerialClient
 
 
 def load_detections(path: Path) -> list[VisionDetection]:
@@ -22,6 +24,39 @@ def load_detections(path: Path) -> list[VisionDetection]:
         ]
 
 
+def emit_or_send_commands(
+    detections: list[VisionDetection],
+    planner: TreatmentPlanner,
+    *,
+    emit_plasma: bool,
+    serial_port: str | None,
+    baud: int,
+    output: TextIO,
+) -> None:
+    waypoints = planner.plan(detections)
+    if serial_port is None:
+        print("HOME", file=output)
+        for waypoint in waypoints:
+            print(waypoint.move_command(), file=output)
+            if emit_plasma:
+                print(waypoint.plasma_command(), file=output)
+        print("STATUS", file=output)
+        return
+
+    try:
+        import serial  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover - depends on local tooling
+        raise SystemExit("pyserial is required for --serial-port. Install with: python -m pip install pyserial") from exc
+
+    with serial.Serial(serial_port, baudrate=baud, timeout=0.5, write_timeout=2) as port:
+        client = AegisSerialClient(port, enable_plasma=emit_plasma, response_timeout_s=5.0)
+        print(client.status(), file=output)
+        for waypoint in waypoints:
+            for response in client.execute_waypoint(waypoint):
+                print(response, file=output)
+        print(client.status(), file=output)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plan AEGIS gantry and plasma commands from CV detections.")
     parser.add_argument("detections_csv", type=Path)
@@ -31,6 +66,8 @@ def main() -> None:
     parser.add_argument("--y-offset-mm", type=float, default=0.0)
     parser.add_argument("--z-mm", type=float, default=4.0)
     parser.add_argument("--emit-plasma", action="store_true", help="Print PLASMA commands after MOVE commands.")
+    parser.add_argument("--serial-port", help="Send planned MOVE commands to an Arduino serial port instead of printing only.")
+    parser.add_argument("--baud", type=int, default=115200, help="Arduino serial baud when --serial-port is used.")
     args = parser.parse_args()
 
     calibration = AffineCalibration.from_scale_offset(
@@ -41,12 +78,14 @@ def main() -> None:
         z_mm=args.z_mm,
     )
     planner = TreatmentPlanner(calibration=calibration, plasma_policy=PlasmaPolicy())
-    print("HOME")
-    for waypoint in planner.plan(load_detections(args.detections_csv)):
-        print(waypoint.move_command())
-        if args.emit_plasma:
-            print(waypoint.plasma_command())
-    print("STATUS")
+    emit_or_send_commands(
+        load_detections(args.detections_csv),
+        planner,
+        emit_plasma=args.emit_plasma,
+        serial_port=args.serial_port,
+        baud=args.baud,
+        output=__import__("sys").stdout,
+    )
 
 
 if __name__ == "__main__":

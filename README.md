@@ -53,7 +53,16 @@ python -m host.aegis_control.cli detections.csv \
   --x-offset-mm 10 --y-offset-mm 12
 ```
 
-Add `--emit-plasma` only after motion-only validation, CAP driver wiring, and safety interlocks are confirmed.
+To send the planned motion-only `MOVE` commands directly to the Arduino controller after calibration values are known:
+
+```bash
+python -m host.aegis_control.cli detections.csv \
+  --x-mm-per-px 0.5 --y-mm-per-px 0.5 \
+  --x-offset-mm 10 --y-offset-mm 12 \
+  --serial-port /dev/cu.usbmodem11301
+```
+
+The CSV contract is one detection per row with `centroid_x_px`, `centroid_y_px`, `area_px2`, and optional `confidence`. This stage intentionally sends motion first. Add `--emit-plasma` only after motion-only validation, CAP driver wiring, and safety interlocks are confirmed.
 
 - **`firmware/jog_test/`** — bring-up sketch to verify motor wiring, driver
   direction, and limit switches before running the full control firmware.
