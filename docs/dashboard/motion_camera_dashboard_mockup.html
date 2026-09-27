@@ -106,7 +106,18 @@
       transition: opacity 180ms ease;
       background: #000;
     }
+    .browser-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      opacity: 0;
+      transition: opacity 180ms ease;
+      background: #000;
+    }
     .camera.streaming .pixy-feed { opacity: 1; }
+    .camera.browser-streaming .browser-video { opacity: 1; }
     .placeholder {
       color: rgba(236,243,255,0.72);
       font-weight: 700;
@@ -116,7 +127,7 @@
       padding: 18px;
       z-index: 1;
     }
-    .camera.streaming .placeholder { display: none; }
+    .camera.streaming .placeholder, .camera.browser-streaming .placeholder { display: none; }
     .crosshair, .wound-box, .marker-box { position: absolute; border-radius: 8px; z-index: 2; pointer-events: none; }
     .crosshair {
       width: 32px; height: 32px;
@@ -180,6 +191,7 @@
       <h2>Camera Feed <span class="subtle">Pixy2 stream / Laptop OpenCV wound CV</span></h2>
       <div id="cameraFrame" class="camera" aria-label="live PixyMon camera feed">
         <img id="pixyImage" class="pixy-feed" alt="PixyMon camera frame" />
+        <video id="browserVideo" class="browser-video" autoplay playsinline muted></video>
         <div class="placeholder">START A CAMERA SERVER, THEN CLICK “START FEED”</div>
         <div class="crosshair"></div>
         <div class="wound-box"></div>
@@ -261,6 +273,7 @@
     const cameraStatus = document.getElementById('cameraStatus');
     const cameraFrame = document.getElementById('cameraFrame');
     const pixyImage = document.getElementById('pixyImage');
+    const browserVideo = document.getElementById('browserVideo');
     const feedSource = document.getElementById('feedSource');
     const pixyStreamUrl = document.getElementById('pixyStreamUrl');
     const cvFrameUrl = document.getElementById('cvFrameUrl');
@@ -273,6 +286,7 @@
     let pixyTimer;
     let consecutivePixyErrors = 0;
     let frameInFlight = false;
+    let browserStream;
     let positions = { x: 0, y: 0, z: 4 };
 
     function addLog(message) {
@@ -342,6 +356,9 @@
 
     async function refreshCvDetections() {
       if (feedSource.value !== 'cv') return;
+      detectionState.textContent = 'browser';
+      return;
+      /* Server-side CV remains available later, but browser camera mode is primary now. */
       try {
         const response = await fetch(detectionsUrl(), { cache: 'no-store' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -360,6 +377,10 @@
       stopPixyFeed(false);
       consecutivePixyErrors = 0;
       const label = feedSource.value === 'cv' ? 'Laptop CV' : 'Pixy feed';
+      if (feedSource.value === 'cv') {
+        startBrowserCamera();
+        return;
+      }
       setCameraState('waiting', `${label}: connecting to bridge stream`);
       refreshPixyStatus();
       requestPixyFrame();
@@ -375,10 +396,39 @@
       pixyTimer = undefined;
       frameInFlight = false;
       cameraFrame.classList.remove('streaming');
+      cameraFrame.classList.remove('browser-streaming');
       pixyImage.removeAttribute('src');
-      setCameraState('waiting', 'Pixy feed: stopped');
+      if (browserStream) {
+        browserStream.getTracks().forEach(track => track.stop());
+        browserStream = undefined;
+      }
+      browserVideo.srcObject = null;
+      setCameraState('waiting', 'Camera feed: stopped');
       detectionState.textContent = '0';
-      if (writeLog) addLog('Pixy feed stopped');
+      if (writeLog) addLog('Camera feed stopped');
+    }
+
+    async function startBrowserCamera() {
+      try {
+        setCameraState('waiting', 'Laptop CV: requesting browser camera permission');
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Browser camera API is unavailable on this page');
+        }
+        browserStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+        browserVideo.srcObject = browserStream;
+        await browserVideo.play();
+        cameraFrame.classList.add('browser-streaming');
+        setCameraState('live', 'Laptop CV: browser camera live');
+        sourceMode.textContent = 'browser-getUserMedia';
+        detectionState.textContent = 'manual';
+        addLog('Laptop browser camera permission granted. Current wound CV overlay is visual/manual until trained weights are connected.');
+      } catch (error) {
+        setCameraState('error', `Laptop CV camera unavailable: ${error.message}`);
+        addLog(`Browser camera failed: ${error.message}`);
+      }
     }
 
     pixyImage.addEventListener('load', () => {
