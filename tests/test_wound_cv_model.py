@@ -4,7 +4,7 @@ import numpy as np
 import cv2  # type: ignore[import-not-found]
 
 from wound_cv_model import HeuristicWoundDetector, WoundDetection, detections_to_csv_rows, estimate_depth_hint
-from wound_cv_model.inference import draw_detections, encode_jpeg
+from wound_cv_model.inference import YoloWoundDetector, draw_detections, encode_jpeg
 
 
 def test_wound_detection_serializes_planner_fields():
@@ -75,3 +75,24 @@ def test_draw_detections_encodes_jpeg():
 
     assert annotated.shape == frame.shape
     assert jpeg.startswith(b"\xff\xd8")
+
+
+def test_yolo_region_filter_rejects_hair_like_false_positive():
+    detector = YoloWoundDetector.__new__(YoloWoundDetector)
+    detector.confidence = 0.55
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    frame[:] = (35, 35, 35)
+    for offset in range(0, 90, 8):
+        cv2.line(frame, (70 + offset, 40), (35 + offset, 210), (5, 5, 5), 3)
+
+    assert not detector._looks_like_wound_region(frame, 30, 35, 175, 215, 0.18, 0.7)
+
+
+def test_yolo_region_filter_keeps_red_wound_like_candidate():
+    detector = YoloWoundDetector.__new__(YoloWoundDetector)
+    detector.confidence = 0.55
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    frame[:] = (85, 95, 110)
+    cv2.ellipse(frame, (160, 120), (38, 24), 0, 0, 360, (55, 65, 195), -1)
+
+    assert detector._looks_like_wound_region(frame, 118, 92, 202, 148, 0.06, 0.72)
