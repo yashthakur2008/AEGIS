@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
 
+from .pixy2_direct import DirectPixySource, Pixy2DirectError
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DASHBOARD_PATH = REPO_ROOT / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html"
 
@@ -28,6 +30,9 @@ class PixyFrameSource(Protocol):
 
     def capture_frame(self) -> bytes:
         """Return a JPEG frame for the dashboard."""
+
+    def capture_blocks(self) -> list[object]:
+        """Return Pixy detection blocks when the source supports direct block access."""
 
 
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -78,32 +83,35 @@ class PixyMonFrameSource:
     def capture_frame(self) -> bytes:
         return capture_pixymon_frame(self.app_name)
 
+    def capture_blocks(self) -> list[object]:
+        raise PixyFeedError("PixyMon screen-capture mode does not expose numeric Pixy blocks; use --source direct")
+
 
 @dataclass
-class DirectPixyFrameSource:
-    """Future direct Pixy2/OpenCV source.
-
-    Pixy2 is not a UVC webcam, so OpenCV cannot open it with VideoCapture like a
-    normal USB camera. The direct source will need libpixyusb2 or the Pixy2
-    Python USB API to obtain raw frames, then optionally encode them with
-    OpenCV. This placeholder makes the dashboard/server contract stable while
-    that lower-level USB bridge is added later.
-    """
-
-    name: str = "Direct Pixy2 USB feed"
-    mode: str = "direct-pixy2-pending"
+class UnavailablePixySource:
+    name: str
+    mode: str
+    error: str
 
     def capture_frame(self) -> bytes:
-        raise PixyFeedError(
-            "direct Pixy2 feed is not implemented yet; use --source pixymon until libpixyusb2/Pixy2 Python API is wired"
-        )
+        raise PixyFeedError(self.error)
+
+    def capture_blocks(self) -> list[object]:
+        raise PixyFeedError(self.error)
 
 
 def make_source(source: str, app_name: str) -> PixyFrameSource:
     if source == "pixymon":
         return PixyMonFrameSource(app_name=app_name)
     if source == "direct":
-        return DirectPixyFrameSource()
+        try:
+            return DirectPixySource()
+        except Pixy2DirectError as exc:
+            return UnavailablePixySource(
+                name="Direct Pixy2 USB unavailable",
+                mode="direct-pixy2-usb-unavailable",
+                error=str(exc),
+            )
     raise ValueError(f"unknown Pixy source: {source}")
 
 
@@ -126,8 +134,14 @@ class PixyDashboardHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/pixy-stream.mjpg":
             self._send_pixy_stream()
             return
+        if path == "/pixy-blocks.json":
+            self._send_pixy_blocks()
+            return
         if path == "/pixy-status.json":
-            self._send_json({"ok": True, "source": self.frame_source.name, "mode": self.frame_source.mode})
+            payload: dict[str, object] = {"ok": True, "source": self.frame_source.name, "mode": self.frame_source.mode}
+            if isinstance(self.frame_source, UnavailablePixySource):
+                payload = {**payload, "ok": False, "error": self.frame_source.error}
+            self._send_json(payload)
             return
         self.send_error(404, "Not found")
 
@@ -170,6 +184,23 @@ class PixyDashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_pixy_blocks(self) -> None:
+        try:
+            blocks = self.frame_source.capture_blocks()
+            payload = {
+                "ok": True,
+                "source": self.frame_source.name,
+                "mode": self.frame_source.mode,
+                "blocks": [block.to_dict() if hasattr(block, "to_dict") else block for block in blocks],
+            }
+        except Exception as exc:
+            self._send_json(
+                {"ok": False, "source": self.frame_source.name, "mode": self.frame_source.mode, "error": str(exc)},
+                status=503,
+            )
+            return
+        self._send_json(payload)
 
     def _send_pixy_stream(self) -> None:
         self.send_response(200)

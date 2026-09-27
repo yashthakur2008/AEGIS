@@ -1,7 +1,7 @@
 import pytest
 
+from host.aegis_control.pixy2_direct import DirectPixySource, Pixy2DirectError
 from host.aegis_control.pixymon_bridge import (
-    DirectPixyFrameSource,
     PixyFeedError,
     PixyMonCaptureError,
     PixyMonFrameSource,
@@ -36,8 +36,17 @@ def test_make_source_selects_pixymon_source():
     assert source.mode == "pixymon-window"
 
 
-def test_direct_pixy_source_is_explicitly_pending():
-    source = DirectPixyFrameSource()
+def test_direct_pixy_source_reports_missing_frame_api():
+    class Backend:
+        backend_name = "fake"
 
-    with pytest.raises(PixyFeedError, match="direct Pixy2 feed is not implemented yet"):
+        def get_blocks(self):
+            return []
+
+        def get_frame_jpeg(self):
+            raise Pixy2DirectError("raw frame unavailable")
+
+    source = DirectPixySource(backend=Backend())
+
+    with pytest.raises(Pixy2DirectError, match="raw frame unavailable"):
         source.capture_frame()

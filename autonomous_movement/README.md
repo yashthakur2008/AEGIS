@@ -67,3 +67,27 @@ python -m autonomous_movement.move_from_detection autonomous_movement/detections
 - Replace CSV detections with live Pixy/OpenCV detections.
 - Add depth/Z only after X/Y calibration works.
 - Add plasma intensity/dwell only after motion-only validation and safety interlocks.
+
+## Direct Pixy2 notes
+
+Pixy2 is not a standard UVC webcam. The reliable direct integration path is the
+Pixy2 USB/libpixyusb2 API, not browser webcam access.
+
+The dashboard bridge has two source modes:
+
+```bash
+# Temporary visual mirror of the visible PixyMon window.
+python -m host.aegis_control.pixymon_bridge --source pixymon
+
+# Direct Pixy2 USB mode. Requires a Pixy2/libpixyusb2 Python binding.
+python -m host.aegis_control.pixymon_bridge --source direct
+```
+
+Direct mode exposes numeric block data for calibration at:
+
+```text
+http://127.0.0.1:8765/pixy-blocks.json
+```
+
+Use each block's `centroid_x_px` and `centroid_y_px` as camera-space inputs for
+`calibration_points.csv` and `detections.csv`.
