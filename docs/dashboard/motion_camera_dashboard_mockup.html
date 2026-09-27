@@ -206,7 +206,7 @@
         <div class="metric"><span>Detections</span><b id="detectionState">0</b></div>
         <div class="metric"><span>Mode</span><b id="sourceMode">Pixy bridge</b></div>
       </div>
-      <p class="warning">Safety rule: this mirrors the PixyMon detection view, including the wound signature overlay. Keep CAP/plasma power disconnected during walking/jog testing.</p>
+      <p class="warning">Safety rule: Laptop CV is for detection/calibration only. Keep CAP/plasma power disconnected during walking/jog testing and do not automate Z from monocular depth hints.</p>
     </section>
 
     <aside class="card">
@@ -315,6 +315,16 @@
       pixyImage.src = nextPixyUrl();
     }
 
+    function updateFeedLabels() {
+      if (feedSource.value === 'cv') {
+        sourceMode.textContent = 'laptop-opencv-cv';
+        setCameraState('waiting', 'Laptop CV: ready, click Start Feed');
+      } else {
+        sourceMode.textContent = 'Pixy bridge';
+        setCameraState('waiting', 'Pixy feed: ready, click Start Feed');
+      }
+    }
+
     async function refreshPixyStatus() {
       try {
         const response = await fetch(statusUrl(), { cache: 'no-store' });
@@ -403,6 +413,11 @@
 
     startCamera.addEventListener('click', startPixyFeed);
     stopCamera.addEventListener('click', () => stopPixyFeed(true));
+    feedSource.addEventListener('change', () => {
+      stopPixyFeed(false);
+      updateFeedLabels();
+      window.setTimeout(startPixyFeed, 100);
+    });
     document.querySelectorAll('[data-command]').forEach(button => {
       button.addEventListener('click', () => updatePosition(button.dataset.command));
     });
@@ -410,6 +425,7 @@
     addLog('Dashboard loaded in browser');
     addLog('Pixy: python -m host.aegis_control.pixymon_bridge --source direct');
     addLog('Laptop CV: python -m wound_cv_model.camera_server --port 8766 --camera-index 0');
+    updateFeedLabels();
     window.setTimeout(startPixyFeed, 250);
   </script>
 </body>
