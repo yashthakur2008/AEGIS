@@ -56,7 +56,7 @@ class HeuristicWoundDetector:
 
 
 class YoloWoundDetector:
-    def __init__(self, weights: Path, confidence: float = 0.25) -> None:
+    def __init__(self, weights: Path, confidence: float = 0.55) -> None:
         try:
             from ultralytics import YOLO  # type: ignore[import-not-found]
         except ImportError as exc:
@@ -65,7 +65,7 @@ class YoloWoundDetector:
         self.confidence = confidence
 
     def detect(self, frame_bgr: np.ndarray) -> list[WoundDetection]:
-        results = self.model.predict(frame_bgr, conf=self.confidence, verbose=False)
+        results = self.model.predict(frame_bgr, conf=self.confidence, iou=0.45, max_det=5, verbose=False)
         detections: list[WoundDetection] = []
         frame_area = float(frame_bgr.shape[0] * frame_bgr.shape[1])
         for result in results:
@@ -77,7 +77,11 @@ class YoloWoundDetector:
                 x1, y1, x2, y2 = [float(value) for value in box.xyxy[0].tolist()]
                 conf = float(box.conf[0]) if getattr(box, "conf", None) is not None else 1.0
                 cls = int(box.cls[0]) if getattr(box, "cls", None) is not None else 0
-                area = max(0.0, (x2 - x1) * (y2 - y1))
+                width = max(0.0, x2 - x1)
+                height = max(0.0, y2 - y1)
+                area = width * height
+                if not self._looks_like_wound_region(frame_bgr, x1, y1, x2, y2, area / frame_area, conf):
+                    continue
                 label = str(names.get(cls, "wound"))
                 detections.append(
                     WoundDetection(
@@ -85,14 +89,49 @@ class YoloWoundDetector:
                         confidence=conf,
                         x_px=x1,
                         y_px=y1,
-                        width_px=x2 - x1,
-                        height_px=y2 - y1,
+                        width_px=width,
+                        height_px=height,
                         area_px2=area,
                         redness_score=0.0,
                         depth=estimate_depth_hint(area / frame_area, 0.0),
                     )
                 )
-        return detections
+        return sorted(detections, key=lambda d: d.confidence, reverse=True)
+
+    def _looks_like_wound_region(self, frame_bgr: np.ndarray, x1: float, y1: float, x2: float, y2: float, area_ratio: float, confidence: float) -> bool:
+        height, width = frame_bgr.shape[:2]
+        box_w = max(1.0, x2 - x1)
+        box_h = max(1.0, y2 - y1)
+        aspect = max(box_w / box_h, box_h / box_w)
+        touches_edge = x1 <= 2 or y1 <= 2 or x2 >= width - 2 or y2 >= height - 2
+        if confidence < self.confidence or area_ratio < 0.0007 or area_ratio > 0.22 or aspect > 5.0:
+            return False
+        if touches_edge and confidence < 0.8:
+            return False
+
+        x1_i, y1_i = max(0, int(x1)), max(0, int(y1))
+        x2_i, y2_i = min(width, int(x2)), min(height, int(y2))
+        roi = frame_bgr[y1_i:y2_i, x1_i:x2_i]
+        if roi.size == 0:
+            return False
+
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        saturation = hsv[:, :, 1]
+        value = hsv[:, :, 2]
+        hue = hsv[:, :, 0]
+        red_or_pink = ((hue <= 18) | (hue >= 160)) & (saturation >= 35) & (value >= 45)
+        red_ratio = float(np.count_nonzero(red_or_pink)) / max(float(roi.shape[0] * roi.shape[1]), 1.0)
+        dark_ratio = float(np.count_nonzero(value < 45)) / max(float(roi.shape[0] * roi.shape[1]), 1.0)
+        low_sat_ratio = float(np.count_nonzero(saturation < 25)) / max(float(roi.shape[0] * roi.shape[1]), 1.0)
+
+        # Hair and shadows are usually dark or desaturated. The detector can still
+        # keep very confident model hits, but weak face/background boxes need a
+        # measurable red/pink wound-colored component.
+        if (dark_ratio > 0.45 or low_sat_ratio > 0.65) and confidence < 0.82:
+            return False
+        if red_ratio < 0.015 and confidence < 0.75:
+            return False
+        return True
 
 
 def build_detector(weights: Path | None = None):
