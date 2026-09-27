@@ -1,0 +1,9 @@
+{
+  "calibration_csv": "autonomous_movement/calibration_points.csv",
+  "detections_csv": "autonomous_movement/detections.csv",
+  "calibration_json": "autonomous_movement/calibration.json",
+  "serial_port": "/dev/cu.usbmodem11301",
+  "baud": 115200,
+  "z_mm": 0.0,
+  "plasma_enabled": false
+}

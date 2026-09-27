@@ -44,6 +44,7 @@ constexpr int DEFAULT_CENTER = 512;
 constexpr int JOY_DEADZONE = 150;
 constexpr float MAX_SPEED_STEPS_PER_S = 20250.0f;
 constexpr float ACCEL_STEPS_PER_S2 = 13500.0f;
+constexpr float SPEED_MULTIPLIER = 40.0f;
 constexpr unsigned long STATUS_PERIOD_MS = 250;
 
 AccelStepper xMotor(AccelStepper::DRIVER, X_STEP_PIN, X_DIR_PIN);
@@ -59,7 +60,7 @@ float joystickToSpeed(int raw, int center) {
   if (abs(delta) <= JOY_DEADZONE) return 0.0f;
   float scaled = (abs(delta) - JOY_DEADZONE) / float(511 - JOY_DEADZONE);
   scaled = constrain(scaled, 0.0f, 1.0f);
-  return (delta > 0 ? 1.0f : -1.0f) * scaled * MAX_SPEED_STEPS_PER_S;
+  return (delta > 0 ? 1.0f : -1.0f) * scaled * MAX_SPEED_STEPS_PER_S * SPEED_MULTIPLIER;
 }
 
 bool joystickCentered(int xRaw, int yRaw) {
@@ -134,8 +135,8 @@ void setup() {
   pinMode(UNUSED_PLASMA_SAFE_PIN, OUTPUT);
   analogWrite(UNUSED_PLASMA_SAFE_PIN, 0);
 
-  xMotor.setMaxSpeed(MAX_SPEED_STEPS_PER_S * 10);
-  yMotor.setMaxSpeed(MAX_SPEED_STEPS_PER_S * 10);
+  xMotor.setMaxSpeed(MAX_SPEED_STEPS_PER_S * SPEED_MULTIPLIER);
+  yMotor.setMaxSpeed(MAX_SPEED_STEPS_PER_S * SPEED_MULTIPLIER);
   xMotor.setAcceleration(ACCEL_STEPS_PER_S2);
   yMotor.setAcceleration(ACCEL_STEPS_PER_S2);
 
