@@ -43,3 +43,29 @@ def test_prepare_from_masks_creates_yolo_dataset(tmp_path):
     assert (output_dir / "data.yaml").exists()
     label_files = list((output_dir / "labels").rglob("*.txt"))
     assert len(label_files) == 3
+
+
+def test_prepare_from_masks_skips_missing_masks(tmp_path):
+    image_dir = tmp_path / "images"
+    mask_dir = tmp_path / "masks"
+    output_dir = tmp_path / "yolo"
+    image_dir.mkdir()
+    mask_dir.mkdir()
+    image = np.zeros((32, 32, 3), dtype=np.uint8)
+    cv2.imwrite(str(image_dir / "orphan.jpg"), image)
+
+    summary = prepare_from_masks(image_dir, mask_dir, output_dir)
+
+    assert summary.images_seen == 1
+    assert summary.labels_written == 0
+    assert summary.skipped_without_mask == 1
+    assert (output_dir / "data.yaml").exists()
+    assert not list((output_dir / "labels").rglob("*.txt"))
+
+
+def test_mask_to_yolo_segments_rejects_empty_mask(tmp_path):
+    mask = np.zeros((40, 40), dtype=np.uint8)
+    mask_path = tmp_path / "empty.png"
+    cv2.imwrite(str(mask_path), mask)
+
+    assert mask_to_yolo_segments(mask_path) == []
