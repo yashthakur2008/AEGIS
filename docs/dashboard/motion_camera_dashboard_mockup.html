@@ -176,7 +176,7 @@
   <header>
     <div>
       <h1>AEGIS Motion + Pixy Camera Dashboard</h1>
-      <div class="subtle">Dashboard can show Pixy2 direct/PixyMon feed or temporary laptop OpenCV wound detection.</div>
+      <div class="subtle">Dashboard can show Pixy2 direct/PixyMon feed or trained laptop-server wound detection.</div>
     </div>
     <div class="status-pill"><span id="cameraDot" class="dot"></span><span id="cameraStatus">Pixy feed: waiting for bridge</span></div>
   </header>
@@ -193,8 +193,8 @@
       <div class="camera-controls">
         <label>Feed source
           <select id="feedSource">
-            <option value="pixy" selected>Pixy bridge</option>
-            <option value="cv">Laptop CV</option>
+            <option value="pixy">Pixy bridge</option>
+            <option value="cv" selected>Trained wound CV server</option>
           </select>
         </label>
         <label style="flex: 1 1 260px;">Pixy bridge stream URL
@@ -332,8 +332,8 @@
 
     function updateFeedLabels() {
       if (feedSource.value === 'cv') {
-        sourceMode.textContent = 'laptop-opencv-cv';
-        setCameraState('waiting', 'Laptop CV: ready, click Start Feed');
+        sourceMode.textContent = 'trained-wound-yolo';
+        setCameraState('waiting', 'Trained wound CV: ready, click Start Feed');
       } else {
         sourceMode.textContent = 'Pixy bridge';
         setCameraState('waiting', 'Pixy feed: ready, click Start Feed');
@@ -354,9 +354,6 @@
 
     async function refreshCvDetections() {
       if (feedSource.value !== 'cv') return;
-      detectionState.textContent = 'browser';
-      return;
-      /* Server-side CV remains available later, but browser camera mode is primary now. */
       try {
         const response = await fetch(detectionsUrl(), { cache: 'no-store' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -374,19 +371,15 @@
     function startPixyFeed() {
       stopPixyFeed(false);
       consecutivePixyErrors = 0;
-      const label = feedSource.value === 'cv' ? 'Laptop CV' : 'Pixy feed';
-      if (feedSource.value === 'cv') {
-        startBrowserCamera();
-        return;
-      }
-      setCameraState('waiting', `${label}: connecting to bridge stream`);
+      const label = feedSource.value === 'cv' ? 'Trained wound CV' : 'Pixy feed';
+      setCameraState('waiting', feedSource.value === 'cv' ? `${label}: connecting to trained local server stream` : `${label}: connecting to bridge stream`);
       refreshPixyStatus();
       requestPixyFrame();
       pixyTimer = window.setInterval(() => {
         requestPixyFrame();
         refreshCvDetections();
       }, feedSource.value === 'cv' ? 1000 : 1000);
-      addLog(`${label} stream requested from bridge`);
+      addLog(feedSource.value === 'cv' ? `${label} stream requested from trained local server` : `${label} stream requested from bridge`);
     }
 
     function stopPixyFeed(writeLog = true) {
@@ -511,7 +504,7 @@
       consecutivePixyErrors = 0;
       frameInFlight = false;
       cameraFrame.classList.add('streaming');
-      setCameraState('live', feedSource.value === 'cv' ? 'Laptop CV: OpenCV wound overlay live' : 'Pixy feed: synced from bridge');
+      setCameraState('live', feedSource.value === 'cv' ? 'Trained wound CV: YOLO overlay live' : 'Pixy feed: synced from bridge');
       refreshCvDetections();
     });
 
@@ -524,7 +517,7 @@
       }
       cameraFrame.classList.remove('streaming');
       setCameraState('error', 'Camera feed unavailable. Check the selected local server URL.');
-      addLog('Camera stream failed 3 times. Start python -m wound_cv_model.camera_server for Laptop CV or the Pixy bridge for Pixy mode.');
+      addLog('Camera stream failed 3 times. Start python -m wound_cv_model.camera_server for trained Laptop CV or the Pixy bridge for Pixy mode.');
     });
 
     function updatePosition(command) {
@@ -556,7 +549,7 @@
 
     addLog('Dashboard loaded in browser');
     addLog('Pixy: python -m host.aegis_control.pixymon_bridge --source direct');
-    addLog('Laptop CV: python -m wound_cv_model.camera_server --port 8766 --camera-index 0');
+    addLog('Trained wound CV: python -m wound_cv_model.camera_server --port 8766 --camera-index 0');
     updateFeedLabels();
     window.setTimeout(startPixyFeed, 250);
   </script>

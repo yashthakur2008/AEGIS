@@ -15,6 +15,7 @@ from .detection import WoundDetection
 from .inference import build_detector, draw_detections, encode_jpeg
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "wound_cv" / "aegis_wound_yolo_seg" / "weights" / "best.pt"
 DASHBOARD_PATH = REPO_ROOT / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html"
 
 
@@ -160,9 +161,14 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--camera-index", type=int, default=0)
-    parser.add_argument("--weights", type=Path, help="Optional YOLO weights. If omitted, use heuristic detector.")
+    parser.add_argument("--weights", type=Path, help="Optional YOLO weights. Defaults to runs/wound_cv/aegis_wound_yolo_seg/weights/best.pt when present.")
     args = parser.parse_args()
-    serve(args.host, args.port, args.camera_index, args.weights)
+    weights = args.weights or (DEFAULT_WEIGHTS if DEFAULT_WEIGHTS.exists() else None)
+    if weights:
+        print(f"Using trained wound weights: {weights}")
+    else:
+        print("Using heuristic wound detector because no trained weights were provided or found.")
+    serve(args.host, args.port, args.camera_index, weights)
 
 
 if __name__ == "__main__":
