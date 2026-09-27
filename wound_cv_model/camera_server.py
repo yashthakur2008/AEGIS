@@ -37,18 +37,30 @@ class CameraState:
             self.last_error = f"Laptop camera index {self.camera_index} is not available"
             raise RuntimeError(self.last_error)
 
-    def capture_annotated_jpeg(self) -> bytes:
+    def reopen(self) -> None:
+        if self.capture is not None:
+            self.capture.release()
+        self.capture = cv2.VideoCapture(self.camera_index)
+        if hasattr(self.capture, "set"):
+            self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.open()
+
+    def read_frame(self):
         self.open()
         ok = False
         frame = None
-        for _ in range(5):
+        for attempt in range(10):
             ok, frame = self.capture.read()
             if ok and frame is not None:
-                break
-            time.sleep(0.05)
-        if not ok or frame is None:
-            self.last_error = "Laptop camera did not return a frame"
-            raise RuntimeError(self.last_error)
+                return frame
+            if attempt == 4:
+                self.reopen()
+            time.sleep(0.08)
+        self.last_error = "Laptop camera did not return a frame"
+        raise RuntimeError(self.last_error)
+
+    def capture_annotated_jpeg(self) -> bytes:
+        frame = self.read_frame()
         detections = self.detector.detect(frame)
         self.last_detections = detections
         self.frames_served += 1
