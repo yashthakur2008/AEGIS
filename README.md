@@ -15,17 +15,25 @@ detection, and safety features (emergency stop, IR temperature monitoring).
 firmware/
   aegis_controller/  Coordinate-based controller firmware (HOME/MOVE/PLASMA/STOP/STATUS)
   jog_test/          Bench-test sketch — jogs all 3 axes via serial (f/b/s)
+  xy_jog_test/       X/Y twitch and jog bring-up sketches
+  xy_joystick_test/  Current safe X/Y joystick control sketch
   lib/               Shared Arduino headers, including authoritative pin map
 host/
   aegis_control/     Host-side CV/Pixy detection → calibrated MOVE/PLASMA planner
+autonomous_movement/ Camera-pixel → machine-coordinate calibration tools
+wound_cv_model/      Wound model training, inference, and laptop camera CV server
 docs/
   architecture/      Wound-to-coordinate pipeline notes
+  dashboard/         Browser motion/camera dashboard
+  PROJECT_MAP.md     Current map of the active subsystems
   ME-195B-Final-Report.pdf   Full project report (background + Appendix E firmware)
   hardware/
     pinout.md        Authoritative Arduino Mega pin map + wiring
 tests/
-  test_firmware_static.py    Static firmware guardrails
+  test_*.py          Python, dashboard, CV, Pixy, calibration, and firmware guardrails
 ```
+
+For the current subsystem map, see [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md).
 
 ## Firmware
 
@@ -74,15 +82,25 @@ The pin map in the sketches reflects the **current hardware wiring**, documented
 in [`docs/hardware/pinout.md`](docs/hardware/pinout.md). Note that this
 supersedes the (outdated) pin assignments in Appendix E of the final report.
 
-## Pixy camera dashboard
+## Browser dashboard and wound CV
 
-The browser dashboard should mirror the Pixy/PixyMon view, not the laptop webcam. Pixy2 is not a UVC webcam, so the current bridge serves a local MJPEG stream from PixyMon while keeping the dashboard contract ready for a later direct Pixy2/OpenCV/libpixyusb2 source. On macOS, open PixyMon first so its detection window is visible, then run:
+The dashboard is at [`docs/dashboard/motion_camera_dashboard_mockup.html`](docs/dashboard/motion_camera_dashboard_mockup.html). The easiest development path is the laptop camera mode:
 
 ```bash
-python -m host.aegis_control.pixymon_bridge --source pixymon
+python -m wound_cv_model.camera_server --host 127.0.0.1 --port 8766 --camera-index 0
 ```
 
-Open `http://127.0.0.1:8765/dashboard` and click **Start Pixy Feed**. The dashboard uses `/pixy-stream.mjpg` for live viewing and `/pixy-frame.jpg` for single-frame checks. A future direct Pixy2 path can be exposed with the same dashboard once libpixyusb2 or the Pixy2 Python USB API is wired into the bridge.
+Open `http://127.0.0.1:8766/dashboard`, select **Laptop CV**, click **Start Feed**, and approve the browser camera permission. Laptop CV uses browser `getUserMedia` directly and overlays a lightweight red wound segmentation box. The wound CV package also includes OpenCV heuristic inference, optional YOLO inference, and training scaffolding for the Kaggle wound dataset.
+
+## Pixy camera dashboard
+
+Pixy2 is not a UVC webcam, so it cannot be opened like a normal Mac camera. The Pixy bridge exposes Pixy endpoints for the dashboard. Direct USB requires a Pixy2/libpixyusb2 Python binding; PixyMon screen capture is only a fallback.
+
+```bash
+python -m host.aegis_control.pixymon_bridge --source direct
+```
+
+Open `http://127.0.0.1:8765/dashboard` and click **Start Feed**. The bridge uses `/pixy-stream.mjpg`, `/pixy-frame.jpg`, `/pixy-blocks.json`, and `/pixy-status.json`.
 
 ## Architecture
 
