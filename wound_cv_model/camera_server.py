@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import http.server
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,7 @@ class CameraState:
     weights: Path | None = None
     detector: Any = field(init=False)
     capture: Any = field(default=None, init=False)
+    camera_lock: threading.Lock = field(default_factory=threading.Lock, init=False)
     last_detections: list[WoundDetection] = field(default_factory=list)
     last_error: str | None = None
     frames_served: int = 0
@@ -60,12 +62,13 @@ class CameraState:
         raise RuntimeError(self.last_error)
 
     def capture_annotated_jpeg(self) -> bytes:
-        frame = self.read_frame()
-        detections = self.detector.detect(frame)
-        self.last_detections = detections
-        self.frames_served += 1
-        self.last_error = None
-        return encode_jpeg(draw_detections(frame, detections))
+        with self.camera_lock:
+            frame = self.read_frame()
+            detections = self.detector.detect(frame)
+            self.last_detections = detections
+            self.frames_served += 1
+            self.last_error = None
+            return encode_jpeg(draw_detections(frame, detections))
 
     def status(self) -> dict[str, object]:
         return {

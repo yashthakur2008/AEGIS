@@ -272,6 +272,7 @@
     const log = document.getElementById('log');
     let pixyTimer;
     let consecutivePixyErrors = 0;
+    let frameInFlight = false;
     let positions = { x: 0, y: 0, z: 4 };
 
     function addLog(message) {
@@ -312,6 +313,8 @@
     }
 
     function requestPixyFrame() {
+      if (frameInFlight) return;
+      frameInFlight = true;
       pixyImage.src = nextPixyUrl();
     }
 
@@ -363,13 +366,14 @@
       pixyTimer = window.setInterval(() => {
         requestPixyFrame();
         refreshCvDetections();
-      }, feedSource.value === 'cv' ? 450 : 1000);
+      }, feedSource.value === 'cv' ? 1000 : 1000);
       addLog(`${label} stream requested from bridge`);
     }
 
     function stopPixyFeed(writeLog = true) {
       if (pixyTimer) window.clearInterval(pixyTimer);
       pixyTimer = undefined;
+      frameInFlight = false;
       cameraFrame.classList.remove('streaming');
       pixyImage.removeAttribute('src');
       setCameraState('waiting', 'Pixy feed: stopped');
@@ -379,6 +383,7 @@
 
     pixyImage.addEventListener('load', () => {
       consecutivePixyErrors = 0;
+      frameInFlight = false;
       cameraFrame.classList.add('streaming');
       setCameraState('live', feedSource.value === 'cv' ? 'Laptop CV: OpenCV wound overlay live' : 'Pixy feed: synced from bridge');
       refreshCvDetections();
@@ -386,6 +391,7 @@
 
     pixyImage.addEventListener('error', () => {
       consecutivePixyErrors += 1;
+      frameInFlight = false;
       if (consecutivePixyErrors < 3) {
         setCameraState('waiting', 'Pixy feed: retrying bridge frame');
         return;
