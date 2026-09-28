@@ -20,6 +20,7 @@ Turn the roadmap into a working operator flow: dashboard baseline, paste/drop sa
    - log file path
    - hard-refresh instruction
 3. Add a target-center crosshair overlay that is clearly not a wound detection box.
+4. Keep the STOP command visible in every live or dry-run workflow.
 
 Definition of done:
 
