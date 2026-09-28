@@ -424,14 +424,16 @@
         });
         browserVideo.srcObject = browserStream;
         await browserVideo.play();
-        cameraFrame.classList.add('streaming');
-        setCameraState('live', 'Trained wound CV: browser camera feeding YOLO server');
+        cameraFrame.classList.add('browser-streaming');
+        cameraFrame.classList.remove('streaming');
+        pixyImage.removeAttribute('src');
+        setCameraState('live', 'Trained wound CV: smooth browser camera live, YOLO overlay async');
         sourceMode.textContent = 'browser-camera-trained-yolo';
         detectionState.textContent = '0';
         resizeDetectionOverlay();
         queueBrowserFrameInference();
-        detectionTimer = window.setInterval(queueBrowserFrameInference, 350);
-        addLog('Browser camera permission granted. Sending frames to trained YOLO server.');
+        detectionTimer = window.setInterval(queueBrowserFrameInference, 800);
+        addLog('Browser camera permission granted. Smooth live video is local; YOLO overlay updates asynchronously.');
       } catch (error) {
         setCameraState('error', `Trained wound CV camera unavailable: ${error.message}`);
         addLog(`Browser camera failed: ${error.message}`);
@@ -461,10 +463,7 @@
         const payload = await response.json();
         detectionState.textContent = String(payload.count ?? 0);
         sourceMode.textContent = payload.mode || 'browser-camera-trained-yolo';
-        if (payload.annotated_jpeg_base64) {
-          pixyImage.src = `data:image/jpeg;base64,${payload.annotated_jpeg_base64}`;
-          cameraFrame.classList.add('streaming');
-        }
+        drawServerDetections(payload.detections || [], sampleWidth, sampleHeight);
         const first = (payload.detections || [])[0];
         if (first) {
           addLog(`YOLO target: x=${first.centroid_x_px.toFixed(1)} y=${first.centroid_y_px.toFixed(1)} confidence=${Number(first.confidence).toFixed(2)} zHint=${first.depth_hint || 'surface'}`);
@@ -486,12 +485,39 @@
         return;
       }
       const elapsed = Date.now() - lastBrowserInferenceMs;
-      if (elapsed < 250) {
+      if (elapsed < 750) {
         browserInferenceQueued = true;
-        window.setTimeout(queueBrowserFrameInference, 250 - elapsed);
+        window.setTimeout(queueBrowserFrameInference, 750 - elapsed);
         return;
       }
       sendBrowserFrameToServer();
+    }
+
+    function drawServerDetections(detections, sourceWidth, sourceHeight) {
+      resizeDetectionOverlay();
+      overlayContext.clearRect(0, 0, detectionOverlay.width, detectionOverlay.height);
+      if (!detections.length) return;
+      const scaleX = detectionOverlay.width / sourceWidth;
+      const scaleY = detectionOverlay.height / sourceHeight;
+      detections.forEach(detection => {
+        const x = detection.x_px * scaleX;
+        const y = detection.y_px * scaleY;
+        const w = detection.width_px * scaleX;
+        const h = detection.height_px * scaleY;
+        const confidence = Number(detection.confidence || 0);
+        overlayContext.strokeStyle = detection.depth_hint === 'deep_risk' ? '#ff5c7a' : '#ffd166';
+        overlayContext.lineWidth = 4;
+        overlayContext.shadowColor = 'rgba(255, 209, 102, 0.45)';
+        overlayContext.shadowBlur = 12;
+        overlayContext.strokeRect(x, y, w, h);
+        overlayContext.shadowBlur = 0;
+        overlayContext.fillStyle = overlayContext.strokeStyle;
+        overlayContext.font = 'bold 16px system-ui, sans-serif';
+        overlayContext.fillText(`wound ${(confidence * 100).toFixed(0)}%`, x + 6, Math.max(20, y - 8));
+        overlayContext.beginPath();
+        overlayContext.arc(x + w / 2, y + h / 2, 5, 0, Math.PI * 2);
+        overlayContext.fill();
+      });
     }
 
     function resizeDetectionOverlay() {
@@ -568,6 +594,7 @@
     }
 
     pixyImage.addEventListener('load', () => {
+      if (feedSource.value === 'cv' && browserStream) return;
       consecutivePixyErrors = 0;
       frameInFlight = false;
       cameraFrame.classList.add('streaming');

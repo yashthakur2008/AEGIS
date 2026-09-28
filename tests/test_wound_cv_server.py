@@ -55,3 +55,16 @@ def test_camera_state_reports_unavailable_camera():
         raise AssertionError("expected unavailable camera error")
 
     assert state.status()["ok"] is False
+
+
+def test_browser_uploaded_frame_returns_lightweight_detection_payload():
+    state = CameraState(camera_index=99)
+    state.detector = FakeDetector()
+    body = encode_jpeg(np.zeros((60, 80, 3), dtype=np.uint8))
+
+    payload = state.detect_uploaded_jpeg(body)
+
+    assert payload["ok"] is True
+    assert payload["count"] == 1
+    assert payload["detections"][0]["centroid_x_px"] == 15
+    assert "annotated_jpeg_base64" not in payload

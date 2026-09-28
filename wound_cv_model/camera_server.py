@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import http.server
 import json
 import threading
@@ -103,13 +102,11 @@ class CameraState:
             self.last_detections = detections
             self.frames_served += 1
             self.last_error = None
-            annotated = encode_jpeg(draw_detections(encoded, detections))
             return {
                 "ok": True,
                 "mode": "browser-camera-trained-yolo",
                 "detections": [detection.to_dict() for detection in detections],
                 "count": len(detections),
-                "annotated_jpeg_base64": base64.b64encode(annotated).decode("ascii"),
             }
 
 
