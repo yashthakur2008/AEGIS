@@ -10,6 +10,8 @@ python -m wound_cv_model.camera_server --host 127.0.0.1 --port 8766 --camera-ind
 
 Open `http://127.0.0.1:8766/dashboard`, select **Laptop CV**, then start the feed. Browser camera mode uses `getUserMedia` directly. The current in-browser overlay is still heuristic and should be replaced by trained weights once available.
 
+You can also attach a still image from the dashboard. The server returns `is_wound`, `wound_count`, every detected wound box/centroid/confidence, and relative `depth_hint` / `z_offset_hint_mm` values for each wound. These Z values are monocular appearance hints only, not safe physical depth measurements.
+
 ## Dataset conversion for segmentation training
 
 The robot needs localization/segmentation, not only classification. If you have wound images and binary masks with matching filenames, convert them to YOLO segmentation format:
