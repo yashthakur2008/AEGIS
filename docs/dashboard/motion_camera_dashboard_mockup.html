@@ -214,6 +214,11 @@
         <div class="metric"><span>Detections</span><b id="detectionState">0</b></div>
         <div class="metric"><span>Mode</span><b id="sourceMode">Pixy bridge</b></div>
       </div>
+      <div class="row">
+        <div class="metric"><span>Camera source</span><b id="cameraSourceState">Not selected</b></div>
+        <div class="metric"><span>Detector latency</span><b id="detectorLatencyState">—</b></div>
+        <div class="metric"><span>Last detector error</span><b id="detectorErrorState">None</b></div>
+      </div>
       <p class="warning">Safety rule: Laptop CV is for detection/calibration only. Keep CAP/plasma power disconnected during walking/jog testing and do not automate Z from monocular depth hints.</p>
     </section>
 
@@ -281,6 +286,9 @@
     const feedState = document.getElementById('feedState');
     const detectionState = document.getElementById('detectionState');
     const sourceMode = document.getElementById('sourceMode');
+    const cameraSourceState = document.getElementById('cameraSourceState');
+    const detectorLatencyState = document.getElementById('detectorLatencyState');
+    const detectorErrorState = document.getElementById('detectorErrorState');
     const log = document.getElementById('log');
     let pixyTimer;
     let consecutivePixyErrors = 0;
@@ -308,6 +316,13 @@
       cameraDot.className = `dot ${state === 'live' ? 'live' : state === 'error' ? 'error' : ''}`;
       cameraStatus.textContent = message;
       feedState.textContent = state === 'live' ? 'Live' : state === 'error' ? 'Error' : 'Waiting';
+    }
+
+    function setDetectorStatus({ source, latencyMs, error, mode } = {}) {
+      if (source !== undefined) cameraSourceState.textContent = source || 'Not selected';
+      if (latencyMs !== undefined) detectorLatencyState.textContent = Number.isFinite(latencyMs) ? `${latencyMs.toFixed(0)} ms` : '—';
+      if (error !== undefined) detectorErrorState.textContent = error || 'None';
+      if (mode !== undefined) sourceMode.textContent = mode || sourceMode.textContent;
     }
 
     function sourceUrl(path) {
@@ -345,9 +360,11 @@
     function updateFeedLabels() {
       if (feedSource.value === 'cv') {
         sourceMode.textContent = 'trained-wound-yolo';
+        setDetectorStatus({ source: 'Laptop/browser camera', mode: 'trained-wound-yolo' });
         setCameraState('waiting', 'Trained wound CV: ready, click Start Feed');
       } else {
         sourceMode.textContent = 'Pixy bridge';
+        setDetectorStatus({ source: 'Pixy bridge', mode: 'Pixy bridge', latencyMs: NaN, error: '' });
         setCameraState('waiting', 'Pixy feed: ready, click Start Feed');
       }
     }
@@ -358,8 +375,10 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const status = await response.json();
         sourceMode.textContent = status.mode || status.source || 'Pixy bridge';
+        setDetectorStatus({ source: status.source || feedSource.value, error: status.last_error || '', mode: status.mode || status.source });
         if (status.warning) addLog(status.warning);
       } catch (error) {
+        setDetectorStatus({ error: error.message });
         addLog(`Camera status unavailable: ${error.message}`);
       }
     }
@@ -406,6 +425,7 @@
       cameraFrame.classList.remove('streaming');
       cameraFrame.classList.remove('browser-streaming');
       pixyImage.removeAttribute('src');
+      setDetectorStatus({ source: 'Not selected', latencyMs: NaN, error: '' });
       if (browserStream) {
         browserStream.getTracks().forEach(track => track.stop());
         browserStream = undefined;
@@ -436,6 +456,8 @@
           video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
+        const [videoTrack] = browserStream.getVideoTracks();
+        const trackLabel = videoTrack && videoTrack.label ? videoTrack.label : 'Browser camera';
         browserVideo.srcObject = browserStream;
         await browserVideo.play();
         cameraFrame.classList.add('browser-streaming');
@@ -443,6 +465,7 @@
         pixyImage.removeAttribute('src');
         setCameraState('live', 'Trained wound CV: smooth browser camera live, YOLO overlay async');
         sourceMode.textContent = 'browser-camera-trained-yolo';
+        setDetectorStatus({ source: trackLabel, mode: 'browser-camera-trained-yolo', latencyMs: NaN, error: '' });
         detectionState.textContent = '0';
         resizeDetectionOverlay();
         queueBrowserFrameInference();
@@ -487,9 +510,11 @@
         latestAcceptedInferenceSeq = requestSeq;
         detectionState.textContent = String(payload.count ?? 0);
         sourceMode.textContent = payload.mode || 'browser-camera-trained-yolo';
+        setDetectorStatus({ latencyMs: responseAgeMs, error: payload.ok === false ? (payload.error || 'Detector returned not ok') : '', mode: payload.mode || 'browser-camera-trained-yolo' });
         drawServerDetections(payload.detections || [], sampleWidth, sampleHeight, 'yolo');
         logDetectionSummary(payload, 'Live YOLO');
       } catch (error) {
+        setDetectorStatus({ error: error.message });
         addLog(`Trained YOLO frame inference unavailable: ${error.message}`);
       } finally {
         browserInferenceInFlight = false;
@@ -505,6 +530,7 @@
       feedSource.value = 'cv';
       updateFeedLabels();
       setCameraState('waiting', `Analyzing attached image: ${file.name}`);
+      setDetectorStatus({ source: `Uploaded image: ${file.name}`, latencyMs: NaN, error: '', mode: 'uploaded-image-trained-yolo' });
       sourceMode.textContent = 'uploaded-image-trained-yolo';
       detectionState.textContent = '…';
       try {
@@ -523,6 +549,7 @@
         cameraFrame.classList.remove('browser-streaming');
         const blob = await new Promise(resolve => analysisCanvas.toBlob(resolve, 'image/jpeg', 0.9));
         if (!blob) throw new Error('Could not encode uploaded image');
+        const requestStartedMs = performance.now();
         const response = await fetch(detectFrameUrl(), {
           method: 'POST',
           headers: { 'Content-Type': 'image/jpeg' },
@@ -531,14 +558,17 @@
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
+        const responseAgeMs = performance.now() - requestStartedMs;
         detectionState.textContent = String(payload.count ?? 0);
         setCameraState(payload.is_wound ? 'live' : 'waiting', payload.is_wound ? `Attached image: ${payload.count} wound candidate(s)` : 'Attached image: no wound detected');
         sourceMode.textContent = payload.mode || 'uploaded-image-trained-yolo';
+        setDetectorStatus({ latencyMs: responseAgeMs, error: payload.ok === false ? (payload.error || 'Detector returned not ok') : '', mode: payload.mode || 'uploaded-image-trained-yolo' });
         drawServerDetections(payload.detections || [], width, height, 'upload');
         logDetectionSummary(payload, 'Uploaded image');
         if (payload.depth_warning) addLog(payload.depth_warning);
       } catch (error) {
         setCameraState('error', `Uploaded image inference failed: ${error.message}`);
+        setDetectorStatus({ error: error.message, latencyMs: NaN });
         detectionState.textContent = '0';
         addLog(`Uploaded image inference failed: ${error.message}`);
       }
