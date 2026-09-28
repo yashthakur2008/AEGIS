@@ -288,6 +288,8 @@
     let lastBrowserInferenceMs = 0;
     let inferenceRequestSeq = 0;
     let latestAcceptedInferenceSeq = 0;
+    let localTrackingTimer;
+    let lastLocalDetection;
     const analysisCanvas = document.createElement('canvas');
     const analysisContext = analysisCanvas.getContext('2d', { willReadFrequently: true });
     let positions = { x: 0, y: 0, z: 4 };
@@ -405,10 +407,13 @@
       }
       if (detectionTimer) window.clearInterval(detectionTimer);
       detectionTimer = undefined;
+      if (localTrackingTimer) window.clearInterval(localTrackingTimer);
+      localTrackingTimer = undefined;
       browserInferenceInFlight = false;
       browserInferenceQueued = false;
       inferenceRequestSeq += 1;
       latestAcceptedInferenceSeq = inferenceRequestSeq;
+      lastLocalDetection = undefined;
       clearDetectionOverlay();
       browserVideo.srcObject = null;
       setCameraState('waiting', 'Camera feed: stopped');
@@ -435,6 +440,8 @@
         sourceMode.textContent = 'browser-camera-trained-yolo';
         detectionState.textContent = '0';
         resizeDetectionOverlay();
+        detectLocalWoundCandidate();
+        localTrackingTimer = window.setInterval(detectLocalWoundCandidate, 90);
         queueBrowserFrameInference();
         detectionTimer = window.setInterval(queueBrowserFrameInference, 220);
         addLog('Browser camera permission granted. Smooth live video is local; fast YOLO + depth overlay updates asynchronously.');
@@ -477,7 +484,7 @@
         latestAcceptedInferenceSeq = requestSeq;
         detectionState.textContent = String(payload.count ?? 0);
         sourceMode.textContent = payload.mode || 'browser-camera-trained-yolo';
-        drawServerDetections(payload.detections || [], sampleWidth, sampleHeight);
+        drawServerDetections(payload.detections || [], sampleWidth, sampleHeight, 'yolo');
         const first = (payload.detections || [])[0];
         if (first) {
           addLog(`YOLO target: x=${first.centroid_x_px.toFixed(1)} y=${first.centroid_y_px.toFixed(1)} confidence=${Number(first.confidence).toFixed(2)} depth=${first.depth_hint || 'surface'} z=${Number(first.z_offset_hint_mm || 0).toFixed(1)}mm`);
@@ -507,8 +514,127 @@
       sendBrowserFrameToServer();
     }
 
-    function drawServerDetections(detections, sourceWidth, sourceHeight) {
+    function estimateRelativeDepth(areaRatio) {
+      if (areaRatio >= 0.12) return { depth_hint: 'close', z_offset_hint_mm: -6.0 };
+      if (areaRatio >= 0.045) return { depth_hint: 'near', z_offset_hint_mm: -3.0 };
+      if (areaRatio >= 0.014) return { depth_hint: 'working', z_offset_hint_mm: 0.0 };
+      return { depth_hint: 'far', z_offset_hint_mm: 4.0 };
+    }
+
+    function smoothDetectionBox(candidate) {
+      if (!lastLocalDetection) {
+        lastLocalDetection = candidate;
+        return candidate;
+      }
+      const previousCenterX = lastLocalDetection.x_px + lastLocalDetection.width_px / 2;
+      const previousCenterY = lastLocalDetection.y_px + lastLocalDetection.height_px / 2;
+      const candidateCenterX = candidate.x_px + candidate.width_px / 2;
+      const candidateCenterY = candidate.y_px + candidate.height_px / 2;
+      const movement = Math.hypot(candidateCenterX - previousCenterX, candidateCenterY - previousCenterY);
+      const maxDimension = Math.max(candidate.width_px, candidate.height_px, lastLocalDetection.width_px, lastLocalDetection.height_px);
+      const alpha = movement > maxDimension * 0.75 ? 0.72 : 0.38;
+      const smoothed = {
+        ...candidate,
+        x_px: lastLocalDetection.x_px * (1 - alpha) + candidate.x_px * alpha,
+        y_px: lastLocalDetection.y_px * (1 - alpha) + candidate.y_px * alpha,
+        width_px: lastLocalDetection.width_px * (1 - alpha) + candidate.width_px * alpha,
+        height_px: lastLocalDetection.height_px * (1 - alpha) + candidate.height_px * alpha,
+      };
+      lastLocalDetection = smoothed;
+      return smoothed;
+    }
+
+    function detectLocalWoundCandidate() {
+      if (!browserStream || !browserVideo.videoWidth || !browserVideo.videoHeight) return;
+      const sampleWidth = 360;
+      const sampleHeight = Math.round(sampleWidth * browserVideo.videoHeight / browserVideo.videoWidth);
+      analysisCanvas.width = sampleWidth;
+      analysisCanvas.height = sampleHeight;
+      analysisContext.drawImage(browserVideo, 0, 0, sampleWidth, sampleHeight);
+      const pixels = analysisContext.getImageData(0, 0, sampleWidth, sampleHeight).data;
+      const visited = new Uint8Array(sampleWidth * sampleHeight);
+      let best = null;
+      const queue = [];
+      const isWoundPixel = (x, y) => {
+        const offset = (y * sampleWidth + x) * 4;
+        const r = pixels[offset];
+        const g = pixels[offset + 1];
+        const b = pixels[offset + 2];
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const redness = r - Math.max(g, b);
+        const pinkness = r - b * 0.82;
+        const saturation = max - min;
+        return r > 80 && g > 25 && b > 25 && saturation > 24 && (redness > 14 || (pinkness > 22 && r > g * 1.08)) && r > b * 0.95;
+      };
+      for (let y = 0; y < sampleHeight; y += 2) {
+        for (let x = 0; x < sampleWidth; x += 2) {
+          const index = y * sampleWidth + x;
+          if (visited[index] || !isWoundPixel(x, y)) continue;
+          queue.length = 0;
+          queue.push([x, y]);
+          visited[index] = 1;
+          let count = 0;
+          let minX = x;
+          let minY = y;
+          let maxX = x;
+          let maxY = y;
+          let redSum = 0;
+          while (queue.length) {
+            const [cx, cy] = queue.pop();
+            count += 1;
+            minX = Math.min(minX, cx);
+            minY = Math.min(minY, cy);
+            maxX = Math.max(maxX, cx);
+            maxY = Math.max(maxY, cy);
+            const offset = (cy * sampleWidth + cx) * 4;
+            redSum += pixels[offset] - Math.max(pixels[offset + 1], pixels[offset + 2]);
+            for (const [nx, ny] of [[cx + 2, cy], [cx - 2, cy], [cx, cy + 2], [cx, cy - 2]]) {
+              if (nx < 0 || ny < 0 || nx >= sampleWidth || ny >= sampleHeight) continue;
+              const nextIndex = ny * sampleWidth + nx;
+              if (!visited[nextIndex] && isWoundPixel(nx, ny)) {
+                visited[nextIndex] = 1;
+                queue.push([nx, ny]);
+              }
+            }
+          }
+          const width = maxX - minX + 2;
+          const height = maxY - minY + 2;
+          const boxArea = width * height;
+          const fillRatio = count * 4 / Math.max(boxArea, 1);
+          const aspect = Math.max(width / Math.max(height, 1), height / Math.max(width, 1));
+          const score = count * fillRatio * Math.max(1, redSum / Math.max(count, 1) / 18);
+          if (count >= 10 && fillRatio > 0.10 && aspect < 6 && (!best || score > best.score)) {
+            best = { minX, minY, width, height, count, fillRatio, score };
+          }
+        }
+      }
+      if (!best) {
+        detectionState.textContent = '0';
+        lastLocalDetection = undefined;
+        clearDetectionOverlay();
+        return;
+      }
+      const areaRatio = (best.width * best.height) / (sampleWidth * sampleHeight);
+      const depth = estimateRelativeDepth(areaRatio);
+      const detection = smoothDetectionBox({
+        label: 'local_wound_track',
+        confidence: Math.min(0.96, 0.46 + best.fillRatio * 0.32 + Math.min(areaRatio * 2.8, 0.18)),
+        x_px: best.minX,
+        y_px: best.minY,
+        width_px: best.width,
+        height_px: best.height,
+        area_px2: best.width * best.height,
+        depth_hint: depth.depth_hint,
+        z_offset_hint_mm: depth.z_offset_hint_mm,
+      });
+      detectionState.textContent = '1';
+      drawServerDetections([detection], sampleWidth, sampleHeight, 'local');
+    }
+
+    function drawServerDetections(detections, sourceWidth, sourceHeight, source = 'yolo') {
       resizeDetectionOverlay();
+      if (!detections.length && source === 'yolo' && lastLocalDetection) return;
       overlayContext.clearRect(0, 0, detectionOverlay.width, detectionOverlay.height);
       if (!detections.length) return;
       const scaleX = detectionOverlay.width / sourceWidth;
@@ -521,7 +647,7 @@
         const confidence = Number(detection.confidence || 0);
         const depthHint = detection.depth_hint || 'surface';
         const zOffset = Number(detection.z_offset_hint_mm || 0);
-        overlayContext.strokeStyle = depthHint === 'deep_risk' ? '#ff5c7a' : depthHint === 'moderate' ? '#ff9f1c' : '#ffd166';
+        overlayContext.strokeStyle = depthHint === 'deep_risk' || depthHint === 'close' ? '#ff5c7a' : depthHint === 'moderate' || depthHint === 'near' ? '#ff9f1c' : depthHint === 'far' ? '#4cc9f0' : '#ffd166';
         overlayContext.lineWidth = 4;
         overlayContext.shadowColor = 'rgba(255, 209, 102, 0.45)';
         overlayContext.shadowBlur = 12;
@@ -530,7 +656,7 @@
         overlayContext.fillStyle = overlayContext.strokeStyle;
         overlayContext.font = 'bold 16px system-ui, sans-serif';
         const depthLabel = `${depthHint} z${zOffset.toFixed(1)}mm`;
-        overlayContext.fillText(`wound ${(confidence * 100).toFixed(0)}% ${depthLabel}`, x + 6, Math.max(20, y - 8));
+        overlayContext.fillText(`${source} wound ${(confidence * 100).toFixed(0)}% ${depthLabel}`, x + 6, Math.max(20, y - 8));
         overlayContext.beginPath();
         overlayContext.arc(x + w / 2, y + h / 2, 5, 0, Math.PI * 2);
         overlayContext.fill();
