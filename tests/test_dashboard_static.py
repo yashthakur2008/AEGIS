@@ -3,8 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def dashboard_html() -> str:
+    return (Path(__file__).resolve().parents[1] / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html").read_text(encoding="utf-8")
+
+
 def test_dashboard_exposes_operator_status_fields():
-    html = (Path(__file__).resolve().parents[1] / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html").read_text(encoding="utf-8")
+    html = dashboard_html()
 
     assert 'id="cameraSourceState"' in html
     assert 'id="detectorLatencyState"' in html
@@ -14,8 +18,22 @@ def test_dashboard_exposes_operator_status_fields():
     assert "responseAgeMs" in html
 
 
+def test_dashboard_prominently_exposes_sample_detector_upload():
+    html = dashboard_html()
+
+    assert "Sample wound detector" in html
+    assert 'id="attachImageButton"' in html
+    assert "Attach / Analyze Wound Image" in html
+    assert 'id="imageUpload"' in html
+    assert 'accept="image/*"' in html
+    assert "attachImageButton.addEventListener('click', () => imageUpload.click())" in html
+    assert "imageUpload.addEventListener('change'" in html
+    assert "detectUploadedImage" in html
+    assert "does not require live camera permission" in html
+
+
 def test_dashboard_keeps_skin_prone_local_tracker_disabled():
-    html = (Path(__file__).resolve().parents[1] / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html").read_text(encoding="utf-8")
+    html = dashboard_html()
 
     assert "setInterval(detectLocalWoundCandidate, 90)" not in html
     assert "setInterval(queueBrowserFrameInference, 220)" in html
