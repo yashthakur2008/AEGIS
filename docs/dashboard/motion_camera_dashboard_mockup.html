@@ -203,6 +203,9 @@
         <label style="flex: 1 1 260px;">Optional server CV frame URL
           <input id="cvFrameUrl" value="http://127.0.0.1:8766/cv-frame.jpg" />
         </label>
+        <label style="flex: 1 1 260px;">Attach wound/reference image
+          <input id="imageUpload" type="file" accept="image/*" />
+        </label>
         <button id="startCamera" class="primary">Start Feed</button>
         <button id="stopCamera">Stop Feed</button>
       </div>
@@ -272,6 +275,7 @@
     const feedSource = document.getElementById('feedSource');
     const pixyStreamUrl = document.getElementById('pixyStreamUrl');
     const cvFrameUrl = document.getElementById('cvFrameUrl');
+    const imageUpload = document.getElementById('imageUpload');
     const startCamera = document.getElementById('startCamera');
     const stopCamera = document.getElementById('stopCamera');
     const feedState = document.getElementById('feedState');
@@ -367,9 +371,10 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
         detectionState.textContent = String(payload.count ?? 0);
-        const first = (payload.detections || [])[0];
+        const detections = payload.detections || [];
+        const first = detections[0];
         if (first) {
-          addLog(`CV target: x=${first.centroid_x_px.toFixed(1)} y=${first.centroid_y_px.toFixed(1)} area=${first.area_px2.toFixed(0)} zHint=${first.depth_hint || 'surface'}`);
+          addLog(`CV result: wound=${Boolean(payload.is_wound)} count=${detections.length} first x=${first.centroid_x_px.toFixed(1)} y=${first.centroid_y_px.toFixed(1)} area=${first.area_px2.toFixed(0)} depth=${first.depth_hint || 'surface'}`);
         }
       } catch (error) {
         addLog(`CV detections unavailable: ${error.message}`);
@@ -440,8 +445,6 @@
         sourceMode.textContent = 'browser-camera-trained-yolo';
         detectionState.textContent = '0';
         resizeDetectionOverlay();
-        detectLocalWoundCandidate();
-        localTrackingTimer = window.setInterval(detectLocalWoundCandidate, 90);
         queueBrowserFrameInference();
         detectionTimer = window.setInterval(queueBrowserFrameInference, 220);
         addLog('Browser camera permission granted. Smooth live video is local; fast YOLO + depth overlay updates asynchronously.');
@@ -485,10 +488,7 @@
         detectionState.textContent = String(payload.count ?? 0);
         sourceMode.textContent = payload.mode || 'browser-camera-trained-yolo';
         drawServerDetections(payload.detections || [], sampleWidth, sampleHeight, 'yolo');
-        const first = (payload.detections || [])[0];
-        if (first) {
-          addLog(`YOLO target: x=${first.centroid_x_px.toFixed(1)} y=${first.centroid_y_px.toFixed(1)} confidence=${Number(first.confidence).toFixed(2)} depth=${first.depth_hint || 'surface'} z=${Number(first.z_offset_hint_mm || 0).toFixed(1)}mm`);
-        }
+        logDetectionSummary(payload, 'Live YOLO');
       } catch (error) {
         addLog(`Trained YOLO frame inference unavailable: ${error.message}`);
       } finally {
@@ -497,6 +497,64 @@
           window.setTimeout(queueBrowserFrameInference, 0);
         }
       }
+    }
+
+    async function detectUploadedImage(file) {
+      if (!file) return;
+      stopPixyFeed(false);
+      feedSource.value = 'cv';
+      updateFeedLabels();
+      setCameraState('waiting', `Analyzing attached image: ${file.name}`);
+      sourceMode.textContent = 'uploaded-image-trained-yolo';
+      detectionState.textContent = '…';
+      try {
+        const bitmap = await createImageBitmap(file);
+        const maxWidth = 960;
+        const scale = Math.min(1, maxWidth / bitmap.width);
+        const width = Math.max(1, Math.round(bitmap.width * scale));
+        const height = Math.max(1, Math.round(bitmap.height * scale));
+        analysisCanvas.width = width;
+        analysisCanvas.height = height;
+        analysisContext.drawImage(bitmap, 0, 0, width, height);
+        const dataUrl = analysisCanvas.toDataURL('image/jpeg', 0.9);
+        pixyImage.src = dataUrl;
+        pixyImage.style.opacity = '1';
+        cameraFrame.classList.add('streaming');
+        cameraFrame.classList.remove('browser-streaming');
+        const blob = await new Promise(resolve => analysisCanvas.toBlob(resolve, 'image/jpeg', 0.9));
+        if (!blob) throw new Error('Could not encode uploaded image');
+        const response = await fetch(detectFrameUrl(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/jpeg' },
+          body: blob,
+          cache: 'no-store',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        detectionState.textContent = String(payload.count ?? 0);
+        setCameraState(payload.is_wound ? 'live' : 'waiting', payload.is_wound ? `Attached image: ${payload.count} wound candidate(s)` : 'Attached image: no wound detected');
+        sourceMode.textContent = payload.mode || 'uploaded-image-trained-yolo';
+        drawServerDetections(payload.detections || [], width, height, 'upload');
+        logDetectionSummary(payload, 'Uploaded image');
+        if (payload.depth_warning) addLog(payload.depth_warning);
+      } catch (error) {
+        setCameraState('error', `Uploaded image inference failed: ${error.message}`);
+        detectionState.textContent = '0';
+        addLog(`Uploaded image inference failed: ${error.message}`);
+      }
+    }
+
+    function logDetectionSummary(payload, label) {
+      const detections = payload.detections || [];
+      if (!detections.length) {
+        addLog(`${label}: no wound detected`);
+        return;
+      }
+      const count = Number(payload.wound_count ?? payload.count ?? detections.length);
+      addLog(`${label}: wound=${Boolean(payload.is_wound)} count=${count}`);
+      detections.forEach((detection, index) => {
+        addLog(`  #${index + 1}: x=${Number(detection.centroid_x_px).toFixed(1)} y=${Number(detection.centroid_y_px).toFixed(1)} confidence=${Number(detection.confidence).toFixed(2)} relativeDepth=${detection.depth_hint || 'surface'} zHint=${Number(detection.z_offset_hint_mm || 0).toFixed(1)}mm`);
+      });
     }
 
     function queueBrowserFrameInference() {
@@ -634,7 +692,6 @@
 
     function drawServerDetections(detections, sourceWidth, sourceHeight, source = 'yolo') {
       resizeDetectionOverlay();
-      if (!detections.length && source === 'yolo' && lastLocalDetection) return;
       overlayContext.clearRect(0, 0, detectionOverlay.width, detectionOverlay.height);
       if (!detections.length) return;
       const scaleX = detectionOverlay.width / sourceWidth;
@@ -775,6 +832,7 @@
 
     startCamera.addEventListener('click', startPixyFeed);
     stopCamera.addEventListener('click', () => stopPixyFeed(true));
+    imageUpload.addEventListener('change', () => detectUploadedImage(imageUpload.files && imageUpload.files[0]));
     feedSource.addEventListener('change', () => {
       stopPixyFeed(false);
       updateFeedLabels();
