@@ -142,6 +142,23 @@
     .metric b { display: block; font-size: 20px; margin-top: 4px; }
     .metric span { color: var(--muted); font-size: 12px; }
 
+    .sample-detector {
+      margin: 18px 18px 0;
+      padding: 14px;
+      border: 1px solid rgba(76,201,240,0.45);
+      border-radius: 14px;
+      background: rgba(76,201,240,0.09);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .sample-detector strong { display: block; font-size: 15px; }
+    .sample-detector span { color: var(--muted); font-size: 12px; }
+    .sample-detector button { min-height: 44px; padding: 0 16px; }
+    .hidden-file { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+
     .controls { padding: 18px; display: grid; gap: 16px; }
     .control-grid { display: grid; grid-template-columns: repeat(3, minmax(74px, 1fr)); gap: 10px; }
     button {
@@ -184,6 +201,14 @@
   <main>
     <section class="card">
       <h2>Camera Feed <span class="subtle">Pixy2 stream / Laptop OpenCV wound CV</span></h2>
+      <div class="sample-detector">
+        <div>
+          <strong>Sample wound detector</strong>
+          <span>Use this for screenshots or wound reference photos. It does not require live camera permission.</span>
+        </div>
+        <button id="attachImageButton" class="primary" type="button">Attach / Analyze Wound Image</button>
+        <input id="imageUpload" class="hidden-file" type="file" accept="image/*" />
+      </div>
       <div id="cameraFrame" class="camera" aria-label="live PixyMon camera feed">
         <img id="pixyImage" class="pixy-feed" alt="PixyMon camera frame" />
         <video id="browserVideo" class="browser-video" autoplay playsinline muted></video>
@@ -202,9 +227,6 @@
         </label>
         <label style="flex: 1 1 260px;">Optional server CV frame URL
           <input id="cvFrameUrl" value="http://127.0.0.1:8766/cv-frame.jpg" />
-        </label>
-        <label style="flex: 1 1 260px;">Attach wound/reference image
-          <input id="imageUpload" type="file" accept="image/*" />
         </label>
         <button id="startCamera" class="primary">Start Feed</button>
         <button id="stopCamera">Stop Feed</button>
@@ -280,6 +302,7 @@
     const feedSource = document.getElementById('feedSource');
     const pixyStreamUrl = document.getElementById('pixyStreamUrl');
     const cvFrameUrl = document.getElementById('cvFrameUrl');
+    const attachImageButton = document.getElementById('attachImageButton');
     const imageUpload = document.getElementById('imageUpload');
     const startCamera = document.getElementById('startCamera');
     const stopCamera = document.getElementById('stopCamera');
@@ -862,6 +885,7 @@
 
     startCamera.addEventListener('click', startPixyFeed);
     stopCamera.addEventListener('click', () => stopPixyFeed(true));
+    attachImageButton.addEventListener('click', () => imageUpload.click());
     imageUpload.addEventListener('change', () => detectUploadedImage(imageUpload.files && imageUpload.files[0]));
     feedSource.addEventListener('change', () => {
       stopPixyFeed(false);
