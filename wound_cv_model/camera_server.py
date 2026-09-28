@@ -85,11 +85,15 @@ class CameraState:
         }
 
     def detections_json(self) -> dict[str, object]:
+        detections = [detection.to_dict() for detection in self.last_detections]
         return {
             "ok": self.last_error is None,
             "mode": "laptop-opencv-cv",
-            "detections": [detection.to_dict() for detection in self.last_detections],
-            "count": len(self.last_detections),
+            "is_wound": bool(detections),
+            "wound_count": len(detections),
+            "detections": detections,
+            "count": len(detections),
+            "depth_warning": "Relative monocular depth only; do not use for autonomous Z motion without calibration.",
         }
 
     def detect_uploaded_jpeg(self, body: bytes) -> dict[str, object]:
@@ -99,14 +103,20 @@ class CameraState:
                 self.last_error = "Uploaded browser frame could not be decoded"
                 raise RuntimeError(self.last_error)
             detections = self.detector.detect(encoded)
+            detection_payloads = [detection.to_dict() for detection in detections]
             self.last_detections = detections
             self.frames_served += 1
             self.last_error = None
             return {
                 "ok": True,
                 "mode": "browser-camera-trained-yolo",
-                "detections": [detection.to_dict() for detection in detections],
+                "is_wound": bool(detections),
+                "wound_count": len(detections),
+                "detections": detection_payloads,
                 "count": len(detections),
+                "image_width_px": int(encoded.shape[1]),
+                "image_height_px": int(encoded.shape[0]),
+                "depth_warning": "Relative monocular depth only; do not use for autonomous Z motion without calibration.",
             }
 
 
