@@ -286,6 +286,8 @@
     let browserInferenceInFlight = false;
     let browserInferenceQueued = false;
     let lastBrowserInferenceMs = 0;
+    let inferenceRequestSeq = 0;
+    let latestAcceptedInferenceSeq = 0;
     const analysisCanvas = document.createElement('canvas');
     const analysisContext = analysisCanvas.getContext('2d', { willReadFrequently: true });
     let positions = { x: 0, y: 0, z: 4 };
@@ -405,6 +407,8 @@
       detectionTimer = undefined;
       browserInferenceInFlight = false;
       browserInferenceQueued = false;
+      inferenceRequestSeq += 1;
+      latestAcceptedInferenceSeq = inferenceRequestSeq;
       clearDetectionOverlay();
       browserVideo.srcObject = null;
       setCameraState('waiting', 'Camera feed: stopped');
@@ -432,8 +436,8 @@
         detectionState.textContent = '0';
         resizeDetectionOverlay();
         queueBrowserFrameInference();
-        detectionTimer = window.setInterval(queueBrowserFrameInference, 800);
-        addLog('Browser camera permission granted. Smooth live video is local; YOLO overlay updates asynchronously.');
+        detectionTimer = window.setInterval(queueBrowserFrameInference, 220);
+        addLog('Browser camera permission granted. Smooth live video is local; fast YOLO + depth overlay updates asynchronously.');
       } catch (error) {
         setCameraState('error', `Trained wound CV camera unavailable: ${error.message}`);
         addLog(`Browser camera failed: ${error.message}`);
@@ -442,16 +446,20 @@
 
     async function sendBrowserFrameToServer() {
       if (!browserVideo.videoWidth || !browserVideo.videoHeight) return;
+      const requestSeq = ++inferenceRequestSeq;
+      const capturedVideoTime = browserVideo.currentTime;
+      const requestStartedMs = performance.now();
       browserInferenceInFlight = true;
       browserInferenceQueued = false;
       lastBrowserInferenceMs = Date.now();
       try {
-        const sampleWidth = 640;
+        const sampleWidth = 416;
         const sampleHeight = Math.round(sampleWidth * browserVideo.videoHeight / browserVideo.videoWidth);
         analysisCanvas.width = sampleWidth;
         analysisCanvas.height = sampleHeight;
         analysisContext.drawImage(browserVideo, 0, 0, sampleWidth, sampleHeight);
-        const blob = await new Promise(resolve => analysisCanvas.toBlob(resolve, 'image/jpeg', 0.86));
+        clearDetectionOverlay();
+        const blob = await new Promise(resolve => analysisCanvas.toBlob(resolve, 'image/jpeg', 0.82));
         if (!blob) return;
         const response = await fetch(detectFrameUrl(), {
           method: 'POST',
@@ -461,12 +469,18 @@
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
+        const responseAgeMs = performance.now() - requestStartedMs;
+        const videoAgeSeconds = browserVideo.currentTime - capturedVideoTime;
+        if (requestSeq < latestAcceptedInferenceSeq || responseAgeMs > 650 || videoAgeSeconds > 0.65) {
+          return;
+        }
+        latestAcceptedInferenceSeq = requestSeq;
         detectionState.textContent = String(payload.count ?? 0);
         sourceMode.textContent = payload.mode || 'browser-camera-trained-yolo';
         drawServerDetections(payload.detections || [], sampleWidth, sampleHeight);
         const first = (payload.detections || [])[0];
         if (first) {
-          addLog(`YOLO target: x=${first.centroid_x_px.toFixed(1)} y=${first.centroid_y_px.toFixed(1)} confidence=${Number(first.confidence).toFixed(2)} zHint=${first.depth_hint || 'surface'}`);
+          addLog(`YOLO target: x=${first.centroid_x_px.toFixed(1)} y=${first.centroid_y_px.toFixed(1)} confidence=${Number(first.confidence).toFixed(2)} depth=${first.depth_hint || 'surface'} z=${Number(first.z_offset_hint_mm || 0).toFixed(1)}mm`);
         }
       } catch (error) {
         addLog(`Trained YOLO frame inference unavailable: ${error.message}`);
@@ -485,9 +499,9 @@
         return;
       }
       const elapsed = Date.now() - lastBrowserInferenceMs;
-      if (elapsed < 750) {
+      if (elapsed < 180) {
         browserInferenceQueued = true;
-        window.setTimeout(queueBrowserFrameInference, 750 - elapsed);
+        window.setTimeout(queueBrowserFrameInference, 180 - elapsed);
         return;
       }
       sendBrowserFrameToServer();
@@ -505,7 +519,9 @@
         const w = detection.width_px * scaleX;
         const h = detection.height_px * scaleY;
         const confidence = Number(detection.confidence || 0);
-        overlayContext.strokeStyle = detection.depth_hint === 'deep_risk' ? '#ff5c7a' : '#ffd166';
+        const depthHint = detection.depth_hint || 'surface';
+        const zOffset = Number(detection.z_offset_hint_mm || 0);
+        overlayContext.strokeStyle = depthHint === 'deep_risk' ? '#ff5c7a' : depthHint === 'moderate' ? '#ff9f1c' : '#ffd166';
         overlayContext.lineWidth = 4;
         overlayContext.shadowColor = 'rgba(255, 209, 102, 0.45)';
         overlayContext.shadowBlur = 12;
@@ -513,7 +529,8 @@
         overlayContext.shadowBlur = 0;
         overlayContext.fillStyle = overlayContext.strokeStyle;
         overlayContext.font = 'bold 16px system-ui, sans-serif';
-        overlayContext.fillText(`wound ${(confidence * 100).toFixed(0)}%`, x + 6, Math.max(20, y - 8));
+        const depthLabel = `${depthHint} z${zOffset.toFixed(1)}mm`;
+        overlayContext.fillText(`wound ${(confidence * 100).toFixed(0)}% ${depthLabel}`, x + 6, Math.max(20, y - 8));
         overlayContext.beginPath();
         overlayContext.arc(x + w / 2, y + h / 2, 5, 0, Math.PI * 2);
         overlayContext.fill();
