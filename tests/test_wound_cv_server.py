@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from wound_cv_model.camera_server import CameraState
+from pathlib import Path
 from wound_cv_model.detection import DepthEstimate, WoundDetection
 from wound_cv_model.inference import encode_jpeg
 
@@ -113,3 +114,9 @@ def test_uploaded_image_reports_not_wound_when_no_detections():
     assert payload["is_wound"] is False
     assert payload["wound_count"] == 0
     assert payload["detections"] == []
+
+
+def test_dashboard_html_responses_disable_browser_cache():
+    source = (Path(__file__).resolve().parents[1] / "wound_cv_model" / "camera_server.py").read_text(encoding="utf-8")
+
+    assert 'send_header("Cache-Control", "no-store, max-age=0")' in source
