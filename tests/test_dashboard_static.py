@@ -32,6 +32,18 @@ def test_dashboard_prominently_exposes_sample_detector_upload():
     assert "does not require live camera permission" in html
 
 
+def test_dashboard_exposes_camera_device_selector():
+    html = dashboard_html()
+
+    assert 'id="cameraDeviceSelect"' in html
+    assert 'id="refreshCameras"' in html
+    assert "Refresh Cameras" in html
+    assert "navigator.mediaDevices.enumerateDevices" in html
+    assert "device.kind === 'videoinput'" in html
+    assert "deviceId: { exact: selectedDeviceId }" in html
+    assert "refreshCameras.addEventListener('click', refreshCameraDevices)" in html
+
+
 def test_dashboard_keeps_skin_prone_local_tracker_disabled():
     html = dashboard_html()
 

@@ -222,6 +222,12 @@
             <option value="cv" selected>Trained wound CV server</option>
           </select>
         </label>
+        <label style="flex: 1 1 260px;">Camera device
+          <select id="cameraDeviceSelect">
+            <option value="">Default browser camera</option>
+          </select>
+        </label>
+        <button id="refreshCameras" type="button">Refresh Cameras</button>
         <label style="flex: 1 1 260px;">Pixy bridge stream URL
           <input id="pixyStreamUrl" value="http://127.0.0.1:8765/pixy-stream.mjpg" />
         </label>
@@ -300,6 +306,8 @@
     const detectionOverlay = document.getElementById('detectionOverlay');
     const overlayContext = detectionOverlay.getContext('2d');
     const feedSource = document.getElementById('feedSource');
+    const cameraDeviceSelect = document.getElementById('cameraDeviceSelect');
+    const refreshCameras = document.getElementById('refreshCameras');
     const pixyStreamUrl = document.getElementById('pixyStreamUrl');
     const cvFrameUrl = document.getElementById('cvFrameUrl');
     const attachImageButton = document.getElementById('attachImageButton');
@@ -365,6 +373,33 @@
     function statusUrl() { return sourceUrl(feedSource.value === 'cv' ? '/cv-status.json' : '/pixy-status.json'); }
     function detectionsUrl() { return sourceUrl('/cv-detections.json'); }
     function detectFrameUrl() { return sourceUrl('/cv-detect-frame'); }
+
+    async function refreshCameraDevices() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        setDetectorStatus({ error: 'Browser camera enumeration is unavailable' });
+        return;
+      }
+      try {
+        const previous = cameraDeviceSelect.value;
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter(device => device.kind === 'videoinput');
+        cameraDeviceSelect.innerHTML = '<option value="">Default browser camera</option>';
+        cameras.forEach((camera, index) => {
+          const option = document.createElement('option');
+          option.value = camera.deviceId;
+          option.textContent = camera.label || `Camera ${index + 1}`;
+          cameraDeviceSelect.appendChild(option);
+        });
+        if ([...cameraDeviceSelect.options].some(option => option.value === previous)) {
+          cameraDeviceSelect.value = previous;
+        }
+        setDetectorStatus({ source: cameraDeviceSelect.selectedOptions[0]?.textContent || 'Default browser camera', error: '' });
+        addLog(`Camera selector refreshed: ${cameras.length || 'no'} video device(s) found`);
+      } catch (error) {
+        setDetectorStatus({ error: error.message });
+        addLog(`Camera selector refresh failed: ${error.message}`);
+      }
+    }
 
     function nextPixyUrl() {
       const base = feedSource.value === 'cv'
@@ -475,8 +510,15 @@
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error('Browser camera API is unavailable on this page');
         }
+        if (browserStream) {
+          browserStream.getTracks().forEach(track => track.stop());
+          browserStream = undefined;
+        }
+        const selectedDeviceId = cameraDeviceSelect.value;
         browserStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: selectedDeviceId
+            ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+            : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
         const [videoTrack] = browserStream.getVideoTracks();
@@ -489,6 +531,7 @@
         setCameraState('live', 'Trained wound CV: smooth browser camera live, YOLO overlay async');
         sourceMode.textContent = 'browser-camera-trained-yolo';
         setDetectorStatus({ source: trackLabel, mode: 'browser-camera-trained-yolo', latencyMs: NaN, error: '' });
+        await refreshCameraDevices();
         detectionState.textContent = '0';
         resizeDetectionOverlay();
         queueBrowserFrameInference();
@@ -885,6 +928,11 @@
 
     startCamera.addEventListener('click', startPixyFeed);
     stopCamera.addEventListener('click', () => stopPixyFeed(true));
+    refreshCameras.addEventListener('click', refreshCameraDevices);
+    cameraDeviceSelect.addEventListener('change', () => {
+      setDetectorStatus({ source: cameraDeviceSelect.selectedOptions[0]?.textContent || 'Default browser camera', error: '' });
+      if (browserStream) startBrowserCamera();
+    });
     attachImageButton.addEventListener('click', () => imageUpload.click());
     imageUpload.addEventListener('change', () => detectUploadedImage(imageUpload.files && imageUpload.files[0]));
     feedSource.addEventListener('change', () => {
@@ -900,6 +948,7 @@
     addLog('Pixy: python -m host.aegis_control.pixymon_bridge --source direct');
     addLog('Trained wound CV: python -m wound_cv_model.camera_server --port 8766 --camera-index 0');
     updateFeedLabels();
+    refreshCameraDevices();
     window.setTimeout(startPixyFeed, 250);
   </script>
 </body>
