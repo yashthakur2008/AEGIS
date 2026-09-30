@@ -22,12 +22,20 @@ def test_dashboard_prominently_exposes_sample_detector_upload():
     html = dashboard_html()
 
     assert "Sample wound detector" in html
+    assert 'id="sampleDropZone"' in html
+    assert "Paste an image, drag/drop it here" in html
     assert 'id="attachImageButton"' in html
     assert "Attach / Analyze Wound Image" in html
     assert 'id="imageUpload"' in html
     assert 'accept="image/*"' in html
+    assert 'id="sampleResultsBody"' in html
     assert "attachImageButton.addEventListener('click', () => imageUpload.click())" in html
     assert "imageUpload.addEventListener('change'" in html
+    assert "window.addEventListener('paste'" in html
+    assert "sampleDropZone.addEventListener('dragover'" in html
+    assert "sampleDropZone.addEventListener('drop'" in html
+    assert "function renderSampleResults" in html
+    assert "wound_count=0, is_wound=false" in html
     assert "detectUploadedImage" in html
     assert "does not require live camera permission" in html
 

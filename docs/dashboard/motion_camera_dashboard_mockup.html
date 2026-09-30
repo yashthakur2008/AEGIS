@@ -157,7 +157,14 @@
     .sample-detector strong { display: block; font-size: 15px; }
     .sample-detector span { color: var(--muted); font-size: 12px; }
     .sample-detector button { min-height: 44px; padding: 0 16px; }
+    .sample-detector.drag-over { border-color: var(--ok); background: rgba(72,213,151,0.13); }
     .hidden-file { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+    .sample-results { margin: 12px 18px 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: rgba(255,255,255,0.035); }
+    .sample-results table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .sample-results th, .sample-results td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+    .sample-results th { color: var(--muted); font-weight: 700; background: rgba(255,255,255,0.035); }
+    .sample-results tr:last-child td { border-bottom: 0; }
+    .sample-results .empty-row { color: var(--muted); }
 
     .controls { padding: 18px; display: grid; gap: 16px; }
     .control-grid { display: grid; grid-template-columns: repeat(3, minmax(74px, 1fr)); gap: 10px; }
@@ -201,13 +208,19 @@
   <main>
     <section class="card">
       <h2>Camera Feed <span class="subtle">Pixy2 stream / Laptop OpenCV wound CV</span></h2>
-      <div class="sample-detector">
+      <div id="sampleDropZone" class="sample-detector" tabindex="0" aria-label="Sample wound detector. Paste, drop, or attach a wound image.">
         <div>
           <strong>Sample wound detector</strong>
-          <span>Use this for screenshots or wound reference photos. It does not require live camera permission.</span>
+          <span>Paste an image, drag/drop it here, or attach a file. It does not require live camera permission.</span>
         </div>
         <button id="attachImageButton" class="primary" type="button">Attach / Analyze Wound Image</button>
         <input id="imageUpload" class="hidden-file" type="file" accept="image/*" />
+      </div>
+      <div id="sampleResults" class="sample-results" aria-live="polite">
+        <table>
+          <thead><tr><th>#</th><th>Status</th><th>Confidence</th><th>Centroid</th><th>Relative depth</th><th>Z hint</th></tr></thead>
+          <tbody id="sampleResultsBody"><tr class="empty-row"><td colspan="6">No sample image analyzed yet.</td></tr></tbody>
+        </table>
       </div>
       <div id="cameraFrame" class="camera" aria-label="live PixyMon camera feed">
         <img id="pixyImage" class="pixy-feed" alt="PixyMon camera frame" />
@@ -312,6 +325,8 @@
     const cvFrameUrl = document.getElementById('cvFrameUrl');
     const attachImageButton = document.getElementById('attachImageButton');
     const imageUpload = document.getElementById('imageUpload');
+    const sampleDropZone = document.getElementById('sampleDropZone');
+    const sampleResultsBody = document.getElementById('sampleResultsBody');
     const startCamera = document.getElementById('startCamera');
     const stopCamera = document.getElementById('stopCamera');
     const feedState = document.getElementById('feedState');
@@ -354,6 +369,37 @@
       if (latencyMs !== undefined) detectorLatencyState.textContent = Number.isFinite(latencyMs) ? `${latencyMs.toFixed(0)} ms` : '—';
       if (error !== undefined) detectorErrorState.textContent = error || 'None';
       if (mode !== undefined) sourceMode.textContent = mode || sourceMode.textContent;
+    }
+
+    function imageFileFromList(fileList) {
+      return [...(fileList || [])].find(file => file && file.type && file.type.startsWith('image/'));
+    }
+
+    function renderSampleResults(payload) {
+      const detections = payload.detections || [];
+      sampleResultsBody.innerHTML = '';
+      if (!detections.length) {
+        const row = document.createElement('tr');
+        row.className = 'empty-row';
+        row.innerHTML = '<td colspan="6">No wound detected. wound_count=0, is_wound=false.</td>';
+        sampleResultsBody.appendChild(row);
+        return;
+      }
+      detections.forEach((detection, index) => {
+        const confidence = Number(detection.confidence || 0);
+        const centroidX = Number(detection.centroid_x_px ?? (detection.x_px + detection.width_px / 2));
+        const centroidY = Number(detection.centroid_y_px ?? (detection.y_px + detection.height_px / 2));
+        const zOffset = Number(detection.z_offset_hint_mm || 0);
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${index + 1}</td>
+          <td>${payload.is_wound === false ? 'review' : 'wound candidate'}</td>
+          <td>${(confidence * 100).toFixed(0)}%</td>
+          <td>${centroidX.toFixed(1)}, ${centroidY.toFixed(1)} px</td>
+          <td>${detection.depth_hint || 'surface'}</td>
+          <td>${zOffset.toFixed(1)} mm</td>`;
+        sampleResultsBody.appendChild(row);
+      });
     }
 
     function sourceUrl(path) {
@@ -629,6 +675,7 @@
         setCameraState(payload.is_wound ? 'live' : 'waiting', payload.is_wound ? `Attached image: ${payload.count} wound candidate(s)` : 'Attached image: no wound detected');
         sourceMode.textContent = payload.mode || 'uploaded-image-trained-yolo';
         setDetectorStatus({ latencyMs: responseAgeMs, error: payload.ok === false ? (payload.error || 'Detector returned not ok') : '', mode: payload.mode || 'uploaded-image-trained-yolo' });
+        renderSampleResults(payload);
         drawServerDetections(payload.detections || [], width, height, 'upload');
         logDetectionSummary(payload, 'Uploaded image');
         if (payload.depth_warning) addLog(payload.depth_warning);
@@ -638,6 +685,16 @@
         detectionState.textContent = '0';
         addLog(`Uploaded image inference failed: ${error.message}`);
       }
+    }
+
+    function handleSampleFile(file, sourceLabel) {
+      if (!file) {
+        addLog(`${sourceLabel}: no image file found`);
+        setDetectorStatus({ error: `${sourceLabel}: no image file found` });
+        return;
+      }
+      addLog(`${sourceLabel}: analyzing ${file.name || 'pasted image'}`);
+      detectUploadedImage(file);
     }
 
     function logDetectionSummary(payload, label) {
@@ -934,7 +991,24 @@
       if (browserStream) startBrowserCamera();
     });
     attachImageButton.addEventListener('click', () => imageUpload.click());
-    imageUpload.addEventListener('change', () => detectUploadedImage(imageUpload.files && imageUpload.files[0]));
+    imageUpload.addEventListener('change', () => handleSampleFile(imageFileFromList(imageUpload.files), 'File upload'));
+    sampleDropZone.addEventListener('dragover', event => {
+      event.preventDefault();
+      sampleDropZone.classList.add('drag-over');
+    });
+    sampleDropZone.addEventListener('dragleave', () => sampleDropZone.classList.remove('drag-over'));
+    sampleDropZone.addEventListener('drop', event => {
+      event.preventDefault();
+      sampleDropZone.classList.remove('drag-over');
+      handleSampleFile(imageFileFromList(event.dataTransfer && event.dataTransfer.files), 'Drag/drop');
+    });
+    window.addEventListener('paste', event => {
+      const file = imageFileFromList(event.clipboardData && event.clipboardData.files);
+      if (file) {
+        event.preventDefault();
+        handleSampleFile(file, 'Clipboard paste');
+      }
+    });
     feedSource.addEventListener('change', () => {
       stopPixyFeed(false);
       updateFeedLabels();
