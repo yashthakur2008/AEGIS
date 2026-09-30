@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import cv2  # type: ignore[import-not-found]
 import numpy as np
 
@@ -40,7 +42,15 @@ def test_prepare_from_masks_creates_yolo_dataset(tmp_path):
 
     assert summary.images_seen == 3
     assert summary.labels_written == 3
+    assert summary.train_count + summary.val_count + summary.test_count == 3
     assert (output_dir / "data.yaml").exists()
+    manifest = json.loads((output_dir / "dataset_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["dataset_format"] == "yolo-segmentation"
+    assert manifest["class_names"] == ["wound"]
+    assert manifest["seed"] == 1
+    assert manifest["counts"]["labels_written"] == 3
+    assert manifest["counts"]["train"] + manifest["counts"]["val"] + manifest["counts"]["test"] == 3
+    assert "depth/Z hints remain relative" in manifest["safety_note"]
     label_files = list((output_dir / "labels").rglob("*.txt"))
     assert len(label_files) == 3
 
@@ -60,6 +70,8 @@ def test_prepare_from_masks_skips_missing_masks(tmp_path):
     assert summary.labels_written == 0
     assert summary.skipped_without_mask == 1
     assert (output_dir / "data.yaml").exists()
+    manifest = json.loads((output_dir / "dataset_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["counts"]["skipped_without_mask"] == 1
     assert not list((output_dir / "labels").rglob("*.txt"))
 
 

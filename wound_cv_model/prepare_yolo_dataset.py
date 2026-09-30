@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import shutil
 from dataclasses import dataclass
@@ -17,6 +18,9 @@ class DatasetSummary:
     images_seen: int
     labels_written: int
     skipped_without_mask: int
+    train_count: int = 0
+    val_count: int = 0
+    test_count: int = 0
 
 
 def list_images(path: Path) -> list[Path]:
@@ -72,6 +76,25 @@ def write_data_yaml(output_dir: Path) -> None:
     )
 
 
+def write_dataset_manifest(output_dir: Path, summary: DatasetSummary, *, seed: int, train_ratio: float, val_ratio: float) -> None:
+    manifest = {
+        "dataset_format": "yolo-segmentation",
+        "class_names": ["wound"],
+        "seed": seed,
+        "split_ratio": {"train": train_ratio, "val": val_ratio, "test": max(0.0, 1.0 - train_ratio - val_ratio)},
+        "counts": {
+            "images_seen": summary.images_seen,
+            "labels_written": summary.labels_written,
+            "skipped_without_mask": summary.skipped_without_mask,
+            "train": summary.train_count,
+            "val": summary.val_count,
+            "test": summary.test_count,
+        },
+        "safety_note": "Training metadata is reproducibility evidence only; depth/Z hints remain relative until physical calibration.",
+    }
+    (output_dir / "dataset_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
 def prepare_from_masks(
     image_dir: Path,
     mask_dir: Path,
@@ -90,6 +113,7 @@ def prepare_from_masks(
 
     labels_written = 0
     skipped = 0
+    split_counts = {"train": 0, "val": 0, "test": 0}
     for index, image in enumerate(images):
         mask = find_matching_mask(image, mask_dir)
         if mask is None:
@@ -103,8 +127,11 @@ def prepare_from_masks(
         shutil.copy2(image, output_dir / "images" / split / image.name)
         (output_dir / "labels" / split / f"{image.stem}.txt").write_text("\n".join(labels) + "\n")
         labels_written += 1
+        split_counts[split] += 1
     write_data_yaml(output_dir)
-    return DatasetSummary(len(images), labels_written, skipped)
+    summary = DatasetSummary(len(images), labels_written, skipped, split_counts["train"], split_counts["val"], split_counts["test"])
+    write_dataset_manifest(output_dir, summary, seed=seed, train_ratio=train_ratio, val_ratio=val_ratio)
+    return summary
 
 
 def main() -> None:
@@ -118,7 +145,9 @@ def main() -> None:
     args = parser.parse_args()
     summary = prepare_from_masks(args.images, args.masks, args.output, train_ratio=args.train_ratio, val_ratio=args.val_ratio, seed=args.seed)
     print(f"images_seen={summary.images_seen} labels_written={summary.labels_written} skipped_without_mask={summary.skipped_without_mask}")
+    print(f"splits=train:{summary.train_count} val:{summary.val_count} test:{summary.test_count}")
     print(f"data_yaml={args.output / 'data.yaml'}")
+    print(f"dataset_manifest={args.output / 'dataset_manifest.json'}")
 
 
 if __name__ == "__main__":
