@@ -193,6 +193,10 @@
 
     .log { height: 180px; overflow: auto; background: #060a13; border: 1px solid var(--border); border-radius: 12px; padding: 12px; color: #b8f7d4; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
     .warning { margin: 0 18px 18px; padding: 12px; border-radius: 12px; background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.35); color: #ffe6a1; font-size: 13px; }
+    .operator-help { margin: 0 18px 18px; padding: 14px; border-radius: 12px; background: rgba(76,201,240,0.08); border: 1px solid rgba(76,201,240,0.35); font-size: 13px; }
+    .operator-help h3 { margin: 0 0 8px; font-size: 14px; }
+    .operator-help ol { margin: 8px 0 0 20px; padding: 0; color: var(--muted); }
+    .operator-help code { display: block; margin: 6px 0; padding: 8px; border-radius: 8px; background: #060a13; color: #b8f7d4; white-space: pre-wrap; }
     @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -261,6 +265,16 @@
         <div class="metric"><span>Last detector error</span><b id="detectorErrorState">None</b></div>
       </div>
       <p class="warning">Safety rule: Laptop CV is for detection/calibration only. Keep CAP/plasma power disconnected during walking/jog testing and do not automate Z from monocular depth hints.</p>
+      <div id="operatorHelp" class="operator-help" aria-label="operator restart help">
+        <h3>Operator restart / hard-refresh help</h3>
+        <code>python -m wound_cv_model.camera_server --host 127.0.0.1 --port 8766 --camera-index 0</code>
+        <ol>
+          <li>Open <strong>http://127.0.0.1:8766/dashboard</strong>, then hard refresh with <strong>Cmd+Shift+R</strong>.</li>
+          <li>If the feed says Error, check <strong>.logs/wound_cv_dashboard.log</strong> and confirm <strong>/cv-status.json</strong> returns <strong>ok: true</strong>.</li>
+          <li>If cameras are missing, click <strong>Refresh Cameras</strong>, allow browser camera permission, then select the Logitech or fallback camera.</li>
+          <li>If detection lags, keep the live video running and use the sample detector to validate wound quality separately.</li>
+        </ol>
+      </div>
     </section>
 
     <aside class="card">

@@ -52,6 +52,19 @@ def test_dashboard_exposes_camera_device_selector():
     assert "refreshCameras.addEventListener('click', refreshCameraDevices)" in html
 
 
+def test_dashboard_exposes_operator_restart_help_panel():
+    html = dashboard_html()
+
+    assert 'id="operatorHelp"' in html
+    assert "Operator restart / hard-refresh help" in html
+    assert "python -m wound_cv_model.camera_server --host 127.0.0.1 --port 8766 --camera-index 0" in html
+    assert "http://127.0.0.1:8766/dashboard" in html
+    assert "Cmd+Shift+R" in html
+    assert ".logs/wound_cv_dashboard.log" in html
+    assert "/cv-status.json" in html
+    assert "ok: true" in html
+
+
 def test_dashboard_keeps_skin_prone_local_tracker_disabled():
     html = dashboard_html()
 
