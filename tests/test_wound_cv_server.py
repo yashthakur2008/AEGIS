@@ -161,6 +161,46 @@ def test_http_upload_endpoint_reports_multiple_wounds_and_no_wound():
         server.server_close()
 
 
+def test_served_dashboard_smoke_workflow_contains_current_operator_ui():
+    state = CameraState(camera_index=99)
+    state.detector = EmptyDetector()
+
+    class TestHandler(WoundCvHandler):
+        camera_state = state
+
+        def log_message(self, format, *args):  # noqa: A002, N802
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_address[1]}"
+
+    try:
+        with urllib.request.urlopen(f"{base_url}/dashboard", timeout=5) as response:
+            dashboard = response.read().decode("utf-8")
+            cache_control = response.headers.get("Cache-Control", "")
+
+        assert response.status == 200
+        assert "no-store" in cache_control
+        assert 'id="sampleDropZone"' in dashboard
+        assert 'id="cameraDeviceSelect"' in dashboard
+        assert 'id="operatorHelp"' in dashboard
+        assert 'id="jogSuggestionState"' in dashboard
+        assert "target center, suggestion only" in dashboard
+        assert "Cmd+Shift+R" in dashboard
+
+        with urllib.request.urlopen(f"{base_url}/cv-status.json", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        assert payload["ok"] is True
+        assert payload["mode"] == "laptop-opencv-cv"
+        assert "Monocular" in payload["warning"]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_dashboard_html_responses_disable_browser_cache():
     source = (Path(__file__).resolve().parents[1] / "wound_cv_model" / "camera_server.py").read_text(encoding="utf-8")
 
