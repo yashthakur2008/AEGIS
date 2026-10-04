@@ -263,6 +263,7 @@
         <div class="metric"><span>Camera source</span><b id="cameraSourceState">Not selected</b></div>
         <div class="metric"><span>Detector latency</span><b id="detectorLatencyState">—</b></div>
         <div class="metric"><span>Last detector error</span><b id="detectorErrorState">None</b></div>
+        <div class="metric"><span>Suggested X/Y jog</span><b id="jogSuggestionState">Center target first</b></div>
       </div>
       <p class="warning">Safety rule: Laptop CV is for detection/calibration only. Keep CAP/plasma power disconnected during walking/jog testing and do not automate Z from monocular depth hints.</p>
       <div id="operatorHelp" class="operator-help" aria-label="operator restart help">
@@ -349,6 +350,7 @@
     const cameraSourceState = document.getElementById('cameraSourceState');
     const detectorLatencyState = document.getElementById('detectorLatencyState');
     const detectorErrorState = document.getElementById('detectorErrorState');
+    const jogSuggestionState = document.getElementById('jogSuggestionState');
     const log = document.getElementById('log');
     let pixyTimer;
     let consecutivePixyErrors = 0;
@@ -385,6 +387,10 @@
       if (mode !== undefined) sourceMode.textContent = mode || sourceMode.textContent;
     }
 
+    function setJogSuggestion(message) {
+      jogSuggestionState.textContent = message;
+    }
+
     function imageFileFromList(fileList) {
       return [...(fileList || [])].find(file => file && file.type && file.type.startsWith('image/'));
     }
@@ -397,6 +403,7 @@
         row.className = 'empty-row';
         row.innerHTML = '<td colspan="6">No wound detected. wound_count=0, is_wound=false.</td>';
         sampleResultsBody.appendChild(row);
+        setJogSuggestion('No wound candidate');
         return;
       }
       detections.forEach((detection, index) => {
@@ -414,6 +421,38 @@
           <td>${zOffset.toFixed(1)} mm</td>`;
         sampleResultsBody.appendChild(row);
       });
+    }
+
+    function drawTargetCrosshair() {
+      const centerX = detectionOverlay.width / 2;
+      const centerY = detectionOverlay.height / 2;
+      overlayContext.save();
+      overlayContext.strokeStyle = 'rgba(76, 201, 240, 0.75)';
+      overlayContext.lineWidth = 2;
+      overlayContext.setLineDash([8, 8]);
+      overlayContext.beginPath();
+      overlayContext.moveTo(centerX, 0);
+      overlayContext.lineTo(centerX, detectionOverlay.height);
+      overlayContext.moveTo(0, centerY);
+      overlayContext.lineTo(detectionOverlay.width, centerY);
+      overlayContext.stroke();
+      overlayContext.setLineDash([]);
+      overlayContext.fillStyle = 'rgba(76, 201, 240, 0.95)';
+      overlayContext.font = 'bold 13px system-ui, sans-serif';
+      overlayContext.fillText('target center, suggestion only', centerX + 8, centerY - 10);
+      overlayContext.restore();
+    }
+
+    function updateJogSuggestion(detection, scaleX, scaleY) {
+      if (!detection) {
+        setJogSuggestion('No wound candidate');
+        return;
+      }
+      const woundCenterX = (Number(detection.x_px) + Number(detection.width_px) / 2) * scaleX;
+      const woundCenterY = (Number(detection.y_px) + Number(detection.height_px) / 2) * scaleY;
+      const dx = detectionOverlay.width / 2 - woundCenterX;
+      const dy = detectionOverlay.height / 2 - woundCenterY;
+      setJogSuggestion(`suggestion only: X ${dx >= 0 ? '+' : ''}${dx.toFixed(0)} px, Y ${dy >= 0 ? '+' : ''}${dy.toFixed(0)} px`);
     }
 
     function sourceUrl(path) {
@@ -860,9 +899,14 @@
     function drawServerDetections(detections, sourceWidth, sourceHeight, source = 'yolo') {
       resizeDetectionOverlay();
       overlayContext.clearRect(0, 0, detectionOverlay.width, detectionOverlay.height);
-      if (!detections.length) return;
+      drawTargetCrosshair();
+      if (!detections.length) {
+        updateJogSuggestion(undefined);
+        return;
+      }
       const scaleX = detectionOverlay.width / sourceWidth;
       const scaleY = detectionOverlay.height / sourceHeight;
+      updateJogSuggestion(detections[0], scaleX, scaleY);
       detections.forEach(detection => {
         const x = detection.x_px * scaleX;
         const y = detection.y_px * scaleY;
@@ -896,6 +940,8 @@
     function clearDetectionOverlay() {
       resizeDetectionOverlay();
       overlayContext.clearRect(0, 0, detectionOverlay.width, detectionOverlay.height);
+      drawTargetCrosshair();
+      setJogSuggestion('Center target first');
     }
 
     function detectWoundInBrowserFrame() {

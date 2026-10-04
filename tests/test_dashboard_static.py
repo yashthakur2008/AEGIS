@@ -65,6 +65,19 @@ def test_dashboard_exposes_operator_restart_help_panel():
     assert "ok: true" in html
 
 
+def test_dashboard_exposes_target_center_and_jog_suggestion():
+    html = dashboard_html()
+
+    assert 'id="jogSuggestionState"' in html
+    assert "Suggested X/Y jog" in html
+    assert "function drawTargetCrosshair" in html
+    assert "function updateJogSuggestion" in html
+    assert "target center, suggestion only" in html
+    assert "suggestion only: X" in html
+    assert "drawTargetCrosshair()" in html
+    assert "updateJogSuggestion(detections[0], scaleX, scaleY)" in html
+
+
 def test_dashboard_keeps_skin_prone_local_tracker_disabled():
     html = dashboard_html()
 
