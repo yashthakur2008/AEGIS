@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import json
+import threading
+import urllib.request
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
 import numpy as np
 
-from wound_cv_model.camera_server import CameraState
-from pathlib import Path
+from wound_cv_model.camera_server import CameraState, WoundCvHandler
 from wound_cv_model.detection import DepthEstimate, WoundDetection
 from wound_cv_model.inference import encode_jpeg
 
@@ -114,6 +119,46 @@ def test_uploaded_image_reports_not_wound_when_no_detections():
     assert payload["is_wound"] is False
     assert payload["wound_count"] == 0
     assert payload["detections"] == []
+
+
+def test_http_upload_endpoint_reports_multiple_wounds_and_no_wound():
+    state = CameraState(camera_index=99)
+    state.detector = MultiWoundDetector()
+
+    class TestHandler(WoundCvHandler):
+        camera_state = state
+
+        def log_message(self, format, *args):  # noqa: A002, N802
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/cv-detect-frame"
+    body = encode_jpeg(np.zeros((90, 120, 3), dtype=np.uint8))
+
+    try:
+        request = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": "image/jpeg"})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        assert payload["ok"] is True
+        assert payload["is_wound"] is True
+        assert payload["wound_count"] == 2
+        assert [detection["depth_hint"] for detection in payload["detections"]] == ["shallow", "moderate"]
+
+        state.detector = EmptyDetector()
+        request = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": "image/jpeg"})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        assert payload["ok"] is True
+        assert payload["is_wound"] is False
+        assert payload["wound_count"] == 0
+        assert payload["detections"] == []
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_dashboard_html_responses_disable_browser_cache():
