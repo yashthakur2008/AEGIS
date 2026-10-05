@@ -6,6 +6,8 @@ from pathlib import Path
 
 from .calibration import XYCalibration
 
+REQUIRED_DETECTION_FIELDS = ("centroid_x_px", "centroid_y_px")
+
 
 @dataclass(frozen=True)
 class Detection:
@@ -18,15 +20,28 @@ class Detection:
 def load_detections(path: Path) -> list[Detection]:
     with path.open(newline="") as handle:
         reader = csv.DictReader(handle)
-        return [
-            Detection(
-                centroid_x_px=float(row["centroid_x_px"]),
-                centroid_y_px=float(row["centroid_y_px"]),
-                area_px2=float(row.get("area_px2") or 0.0),
-                confidence=float(row.get("confidence") or 1.0),
-            )
-            for row in reader
-        ]
+        fieldnames = set(reader.fieldnames or [])
+        missing_fields = [field for field in REQUIRED_DETECTION_FIELDS if field not in fieldnames]
+        if missing_fields:
+            raise ValueError(f"{path}: missing required detection CSV column(s): {', '.join(missing_fields)}")
+
+        detections: list[Detection] = []
+        for line_number, row in enumerate(reader, start=2):
+            try:
+                detections.append(
+                    Detection(
+                        centroid_x_px=float(row["centroid_x_px"]),
+                        centroid_y_px=float(row["centroid_y_px"]),
+                        area_px2=float(row.get("area_px2") or 0.0),
+                        confidence=float(row.get("confidence") or 1.0),
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{path}: invalid numeric detection value on CSV line {line_number}: "
+                    "centroid_x_px, centroid_y_px, area_px2, and confidence must be numbers"
+                ) from exc
+        return detections
 
 
 def detection_to_move_command(detection: Detection, calibration: XYCalibration, *, z_mm: float = 0.0) -> str:

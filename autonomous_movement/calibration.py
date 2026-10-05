@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
+REQUIRED_SAMPLE_FIELDS = ("pixel_x", "pixel_y", "machine_x_mm", "machine_y_mm")
+
 
 @dataclass(frozen=True)
 class CalibrationSample:
@@ -47,15 +49,28 @@ class XYCalibration:
 def load_samples(path: Path) -> list[CalibrationSample]:
     with path.open(newline="") as handle:
         reader = csv.DictReader(handle)
-        return [
-            CalibrationSample(
-                pixel_x=float(row["pixel_x"]),
-                pixel_y=float(row["pixel_y"]),
-                machine_x_mm=float(row["machine_x_mm"]),
-                machine_y_mm=float(row["machine_y_mm"]),
-            )
-            for row in reader
-        ]
+        fieldnames = set(reader.fieldnames or [])
+        missing_fields = [field for field in REQUIRED_SAMPLE_FIELDS if field not in fieldnames]
+        if missing_fields:
+            raise ValueError(f"{path}: missing required calibration CSV column(s): {', '.join(missing_fields)}")
+
+        samples: list[CalibrationSample] = []
+        for line_number, row in enumerate(reader, start=2):
+            try:
+                samples.append(
+                    CalibrationSample(
+                        pixel_x=float(row["pixel_x"]),
+                        pixel_y=float(row["pixel_y"]),
+                        machine_x_mm=float(row["machine_x_mm"]),
+                        machine_y_mm=float(row["machine_y_mm"]),
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{path}: invalid numeric calibration value on CSV line {line_number}: "
+                    "pixel_x, pixel_y, machine_x_mm, and machine_y_mm must be numbers"
+                ) from exc
+        return samples
 
 
 def solve_affine(samples: Iterable[CalibrationSample]) -> XYCalibration:

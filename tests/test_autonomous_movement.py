@@ -3,8 +3,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from autonomous_movement.calibration import CalibrationSample, XYCalibration, solve_affine
-from autonomous_movement.movement import Detection, detection_to_move_command, plan_move_commands
+from autonomous_movement.calibrate import load_samples_or_exit
+from autonomous_movement.calibration import CalibrationSample, XYCalibration, load_samples, solve_affine
+from autonomous_movement.move_from_detection import load_detections_or_exit
+from autonomous_movement.movement import Detection, detection_to_move_command, load_detections, plan_move_commands
 
 
 def test_solve_affine_maps_pixel_points_to_machine_xy():
@@ -37,3 +39,67 @@ def test_plan_move_commands_handles_multiple_detections():
     commands = plan_move_commands([Detection(1, 2), Detection(3, 4)], calibration)
 
     assert commands == ["MOVE 1.000 2.000 0.000", "MOVE 3.000 4.000 0.000"]
+
+
+def test_autonomous_detection_loader_reports_missing_columns(tmp_path: Path):
+    detections_csv = tmp_path / "detections.csv"
+    detections_csv.write_text("centroid_x_px,area_px2\n10,100\n", encoding="utf-8")
+
+    try:
+        load_detections(detections_csv)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected missing detection column error")
+
+    assert str(detections_csv) in message
+    assert "missing required detection CSV column" in message
+    assert "centroid_y_px" in message
+
+
+def test_autonomous_detection_cli_reports_bad_numeric_line(tmp_path: Path):
+    detections_csv = tmp_path / "detections.csv"
+    detections_csv.write_text("centroid_x_px,centroid_y_px,area_px2\n10,bad,100\n", encoding="utf-8")
+
+    try:
+        load_detections_or_exit(detections_csv)
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected detection numeric SystemExit")
+
+    assert str(detections_csv) in message
+    assert "line 2" in message
+    assert "must be numbers" in message
+
+
+def test_autonomous_calibration_loader_reports_missing_columns(tmp_path: Path):
+    samples_csv = tmp_path / "calibration.csv"
+    samples_csv.write_text("pixel_x,pixel_y,machine_x_mm\n10,20,30\n", encoding="utf-8")
+
+    try:
+        load_samples(samples_csv)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected missing calibration column error")
+
+    assert str(samples_csv) in message
+    assert "missing required calibration CSV column" in message
+    assert "machine_y_mm" in message
+
+
+def test_autonomous_calibration_cli_reports_bad_numeric_line(tmp_path: Path):
+    samples_csv = tmp_path / "calibration.csv"
+    samples_csv.write_text("pixel_x,pixel_y,machine_x_mm,machine_y_mm\n10,20,bad,40\n", encoding="utf-8")
+
+    try:
+        load_samples_or_exit(samples_csv)
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected calibration numeric SystemExit")
+
+    assert str(samples_csv) in message
+    assert "line 2" in message
+    assert "must be numbers" in message
