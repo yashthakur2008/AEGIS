@@ -21,6 +21,21 @@ These images are not a model-quality substitute for real pasted photos. They are
 python tools/sample_wound_smoke.py --output-dir sample_outputs --write-images
 ```
 
+To verify the same HTTP path used by the dashboard, start the local CV server
+and replay the generated smoke cases through `/cv-detect-frame`:
+
+```bash
+python -m wound_cv_model.camera_server --host 127.0.0.1 --port 8766 --camera-index 0
+python tools/sample_wound_smoke.py \
+  --output-dir sample_outputs/http-replay \
+  --endpoint-url http://127.0.0.1:8766/cv-detect-frame
+```
+
+Endpoint replay records `mode: "http_endpoint"`, the endpoint URL, and the
+server's `is_wound` / `wound_count` fields for each case. Use this before a
+demo to catch regressions between the sample detector UI and the server upload
+endpoint.
+
 Outputs:
 
 - `sample_outputs/sample_wound_smoke_report.json`
