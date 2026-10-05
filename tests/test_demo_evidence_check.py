@@ -14,12 +14,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def copy_required_demo_files(target: Path) -> None:
     dashboard_src = REPO_ROOT / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html"
     validation_src = REPO_ROOT / "docs" / "validation" / "sample_wound_detector_smoke.md"
+    logitech_src = REPO_ROOT / "docs" / "validation" / "logitech_calibration_manifest.md"
+    readme_src = REPO_ROOT / "README.md"
     dashboard_dst = target / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html"
     validation_dst = target / "docs" / "validation" / "sample_wound_detector_smoke.md"
+    logitech_dst = target / "docs" / "validation" / "logitech_calibration_manifest.md"
+    readme_dst = target / "README.md"
     dashboard_dst.parent.mkdir(parents=True)
     validation_dst.parent.mkdir(parents=True)
     shutil.copy2(dashboard_src, dashboard_dst)
     shutil.copy2(validation_src, validation_dst)
+    shutil.copy2(logitech_src, logitech_dst)
+    shutil.copy2(readme_src, readme_dst)
 
 
 def test_demo_evidence_check_reports_present_artifacts(tmp_path: Path):
@@ -30,8 +36,10 @@ def test_demo_evidence_check_reports_present_artifacts(tmp_path: Path):
     formatted = format_checks(checks)
 
     assert all(check.ok for check in checks)
-    assert "SUMMARY 8/8 evidence checks present" in formatted
+    assert "SUMMARY 12/12 evidence checks present" in formatted
     assert "Dashboard server command documented" in formatted
+    assert "Logitech calibration manifest workflow documented" in formatted
+    assert "Motion dry-run simulator documented" in formatted
 
 
 def test_demo_evidence_check_reports_missing_sample_outputs(tmp_path: Path):
@@ -43,6 +51,8 @@ def test_demo_evidence_check_reports_missing_sample_outputs(tmp_path: Path):
     assert by_name["Sample replay report passes"].ok is False
     assert by_name["Sample images available"].ok is False
     assert by_name["Sample detector UI present"].ok is True
+    assert by_name["Camera selector UI present"].ok is True
+    assert by_name["Motion dry-run simulator documented"].ok is True
 
 
 def test_demo_evidence_json_shape(tmp_path: Path):
@@ -54,4 +64,4 @@ def test_demo_evidence_json_shape(tmp_path: Path):
     encoded = json.dumps(payload)
 
     assert '"ok": true' in encoded
-    assert len(payload["checks"]) == 8
+    assert len(payload["checks"]) == 12
