@@ -51,6 +51,27 @@ def test_demo_evidence_check_reports_missing_sample_outputs(tmp_path: Path):
     assert by_name["Sample replay report passes"].ok is False
     assert by_name["Sample images available"].ok is False
     assert by_name["Sample detector UI present"].ok is True
+
+
+def test_demo_evidence_check_rejects_stale_sample_report_without_elongated_abrasion(tmp_path: Path):
+    copy_required_demo_files(tmp_path)
+    sample_outputs = tmp_path / "sample_outputs"
+    image_dir = sample_outputs / "images"
+    image_dir.mkdir(parents=True)
+    stale_report = {
+        "ok": True,
+        "case_count": 6,
+        "cases": [{"name": f"old_case_{index}", "passed": True} for index in range(6)],
+    }
+    (sample_outputs / "sample_wound_smoke_report.json").write_text(json.dumps(stale_report), encoding="utf-8")
+    for index in range(6):
+        (image_dir / f"old_case_{index}.jpg").write_bytes(b"fake")
+
+    checks = check_demo_evidence(tmp_path)
+    by_name = {check.name: check for check in checks}
+
+    assert by_name["Sample replay report passes"].ok is False
+    assert by_name["Sample images available"].ok is False
     assert by_name["Camera selector UI present"].ok is True
     assert by_name["Motion dry-run simulator documented"].ok is True
 
