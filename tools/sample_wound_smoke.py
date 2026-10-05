@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -90,19 +91,39 @@ SMOKE_CASES: tuple[SmokeCase, ...] = (
 )
 
 
-def run_smoke(output_dir: Path, write_images: bool) -> dict[str, object]:
+def detect_with_endpoint(image: np.ndarray, endpoint_url: str) -> dict[str, object]:
+    ok, encoded = cv2.imencode(".jpg", image)
+    if not ok:
+        raise RuntimeError("OpenCV failed to encode smoke image")
+    request = urllib.request.Request(
+        endpoint_url,
+        data=encoded.tobytes(),
+        method="POST",
+        headers={"Content-Type": "image/jpeg"},
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def run_smoke(output_dir: Path, write_images: bool, endpoint_url: str | None = None) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     image_dir = output_dir / "images"
     if write_images:
         image_dir.mkdir(parents=True, exist_ok=True)
 
-    detector = HeuristicWoundDetector(min_area_px=120.0)
+    detector = None if endpoint_url else HeuristicWoundDetector(min_area_px=120.0)
     cases: list[dict[str, object]] = []
     failures: list[str] = []
 
     for case in SMOKE_CASES:
         image = case.builder()
-        detections = detector.detect(image)
+        payload: dict[str, object] | None = None
+        if endpoint_url:
+            payload = detect_with_endpoint(image, endpoint_url)
+            detections = payload.get("detections", [])
+        else:
+            assert detector is not None
+            detections = [detection.to_dict() for detection in detector.detect(image)]
         count = len(detections)
         passed = case.expected_min_count <= count <= case.expected_max_count
         if not passed:
@@ -119,13 +140,18 @@ def run_smoke(output_dir: Path, write_images: bool) -> dict[str, object]:
                 "count": count,
                 "is_wound": count > 0,
                 "passed": passed,
-                "detections": [detection.to_dict() for detection in detections],
+                "server_ok": payload.get("ok") if payload else None,
+                "server_is_wound": payload.get("is_wound") if payload else None,
+                "server_wound_count": payload.get("wound_count") if payload else None,
+                "detections": detections,
             }
         )
 
     report = {
         "ok": not failures,
         "case_count": len(cases),
+        "mode": "http_endpoint" if endpoint_url else "in_process_heuristic",
+        "endpoint_url": endpoint_url,
         "failures": failures,
         "cases": cases,
         "depth_warning": "Relative monocular depth hints are smoke-test labels only; do not drive autonomous Z.",
@@ -138,9 +164,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run synthetic sample wound detector smoke cases")
     parser.add_argument("--output-dir", type=Path, default=Path("sample_outputs"), help="Directory for JSON report and optional images")
     parser.add_argument("--write-images", action="store_true", help="Write generated sample JPEGs for manual dashboard upload/paste checks")
+    parser.add_argument(
+        "--endpoint-url",
+        help="Optional running dashboard endpoint, e.g. http://127.0.0.1:8766/cv-detect-frame. When set, smoke images replay through HTTP instead of the in-process heuristic detector.",
+    )
     args = parser.parse_args()
 
-    report = run_smoke(args.output_dir, args.write_images)
+    report = run_smoke(args.output_dir, args.write_images, endpoint_url=args.endpoint_url)
     print(json.dumps(report, indent=2))
     return 0 if report["ok"] else 1
 
