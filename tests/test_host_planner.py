@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from host.aegis_control import AffineCalibration, DryRunSerialPort, PlasmaPolicy, TreatmentPlanner, VisionDetection
 from host.aegis_control.serial_client import AegisSerialClient
-from host.aegis_control.cli import emit_or_send_commands
+from host.aegis_control.cli import emit_or_send_commands, load_detections, load_detections_or_exit
 
 
 def test_affine_calibration_converts_pixy_centroid_to_machine_point():
@@ -85,3 +85,38 @@ def test_cli_emit_or_send_commands_can_use_simulated_controller():
         "OK MOVE X=50.000 Y=20.000 Z=4.000",
         "OK STATUS X=50.000 Y=20.000 Z=4.000 HOMED=1 STOPPED=0",
     ]
+
+
+def test_load_detections_reports_missing_required_columns(tmp_path: Path):
+    detections_csv = tmp_path / "detections.csv"
+    detections_csv.write_text("centroid_x_px,area_px2\n10,100\n", encoding="utf-8")
+
+    try:
+        load_detections(detections_csv)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected missing column validation error")
+
+    assert str(detections_csv) in message
+    assert "missing required detection CSV column" in message
+    assert "centroid_y_px" in message
+
+
+def test_load_detections_reports_bad_numeric_values_with_line_number(tmp_path: Path):
+    detections_csv = tmp_path / "detections.csv"
+    detections_csv.write_text(
+        "centroid_x_px,centroid_y_px,area_px2,confidence\n10,20,not-a-number,0.9\n",
+        encoding="utf-8",
+    )
+
+    try:
+        load_detections_or_exit(detections_csv)
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected numeric validation SystemExit")
+
+    assert str(detections_csv) in message
+    assert "line 2" in message
+    assert "must be numbers" in message
