@@ -22,6 +22,7 @@ def main() -> None:
     args = parser.parse_args()
 
     calibration = solve_affine(load_samples_or_exit(args.samples_csv))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(calibration.to_json())
     print(f"Wrote {args.output}")
     print(calibration.to_json(), end="")

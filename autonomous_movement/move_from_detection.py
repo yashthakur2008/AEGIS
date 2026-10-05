@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import json
 
 from autonomous_movement.calibration import XYCalibration
 from autonomous_movement.movement import load_detections, plan_move_commands
@@ -16,6 +17,15 @@ def load_detections_or_exit(path: Path):
         raise SystemExit(str(exc)) from exc
 
 
+def load_calibration_or_exit(path: Path) -> XYCalibration:
+    try:
+        return XYCalibration.from_json(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SystemExit(f"Could not read calibration JSON {path}: {exc}") from exc
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"Invalid calibration JSON {path}: {exc}") from exc
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert CV/Pixy detections into motion-only Arduino MOVE commands.")
     parser.add_argument("detections_csv", type=Path, help="CSV with centroid_x_px,centroid_y_px,area_px2,confidence")
@@ -25,7 +35,7 @@ def main() -> None:
     parser.add_argument("--baud", type=int, default=115200)
     args = parser.parse_args()
 
-    calibration = XYCalibration.from_json(args.calibration.read_text())
+    calibration = load_calibration_or_exit(args.calibration)
     commands = plan_move_commands(load_detections_or_exit(args.detections_csv), calibration, z_mm=args.z_mm)
 
     if args.serial_port is None:
