@@ -42,11 +42,26 @@ def _json_ok(path: Path, predicate: Callable[[dict[str, object]], bool]) -> bool
     return predicate(payload)
 
 
+def _sample_report_has_required_cases(payload: dict[str, object]) -> bool:
+    cases = payload.get("cases")
+    if not isinstance(cases, list):
+        return False
+    case_names = {case.get("name") for case in cases if isinstance(case, dict)}
+    return (
+        payload.get("ok") is True
+        and int(payload.get("case_count", 0)) >= 7
+        and "elongated_abrasion" in case_names
+        and all(isinstance(case, dict) and case.get("passed") is True for case in cases)
+    )
+
+
 def check_demo_evidence(repo_root: Path) -> list[EvidenceCheck]:
     dashboard = repo_root / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html"
     sample_report = repo_root / "sample_outputs" / "sample_wound_smoke_report.json"
     sample_images = repo_root / "sample_outputs" / "images"
     validation_doc = repo_root / "docs" / "validation" / "sample_wound_detector_smoke.md"
+    logitech_doc = repo_root / "docs" / "validation" / "logitech_calibration_manifest.md"
+    readme = repo_root / "README.md"
 
     checks = [
         EvidenceCheck(
@@ -87,16 +102,16 @@ def check_demo_evidence(repo_root: Path) -> list[EvidenceCheck]:
         EvidenceCheck(
             "Phase 2",
             "Sample replay report passes",
-            _json_ok(sample_report, lambda payload: payload.get("ok") is True and int(payload.get("case_count", 0)) >= 6),
+            _json_ok(sample_report, _sample_report_has_required_cases),
             str(sample_report.relative_to(repo_root)),
-            "Smoke report exists, is valid JSON, and records passing sample cases.",
+            "Smoke report exists, is valid JSON, and records passing sample cases including elongated_abrasion.",
         ),
         EvidenceCheck(
             "Phase 2",
             "Sample images available",
-            sample_images.exists() and len(list(sample_images.glob("*.jpg"))) >= 6,
+            sample_images.exists() and len(list(sample_images.glob("*.jpg"))) >= 7 and (sample_images / "elongated_abrasion.jpg").exists(),
             str(sample_images.relative_to(repo_root)),
-            "At least six generated sample images exist for manual paste/drop replay.",
+            "At least seven generated sample images exist for manual paste/drop replay, including elongated_abrasion.jpg.",
         ),
         EvidenceCheck(
             "Phase 2",
@@ -104,6 +119,34 @@ def check_demo_evidence(repo_root: Path) -> list[EvidenceCheck]:
             _contains(validation_doc, "--endpoint-url") and _contains(validation_doc, "/cv-detect-frame"),
             str(validation_doc.relative_to(repo_root)),
             "Validation doc explains server endpoint replay mode.",
+        ),
+        EvidenceCheck(
+            "Phase 3",
+            "Camera selector UI present",
+            all(_contains(dashboard, marker) for marker in ["cameraDeviceSelect", "refreshCameraDevices", "Refresh Cameras"]),
+            str(dashboard.relative_to(repo_root)),
+            "Dashboard exposes browser camera enumeration and camera selection controls.",
+        ),
+        EvidenceCheck(
+            "Phase 3",
+            "Logitech calibration manifest workflow documented",
+            _contains(logitech_doc, "wound_cv_model.logitech_calibration") and _contains(logitech_doc, "close") and _contains(logitech_doc, "working") and _contains(logitech_doc, "far"),
+            str(logitech_doc.relative_to(repo_root)),
+            "Validation doc explains Logitech close/working/far calibration metadata capture.",
+        ),
+        EvidenceCheck(
+            "Phase 4",
+            "Target-center and suggested jog UI present",
+            all(_contains(dashboard, marker) for marker in ["jogSuggestionState", "target center, suggestion only", "Suggested X/Y jog"]),
+            str(dashboard.relative_to(repo_root)),
+            "Dashboard shows target-center overlay text and suggestion-only X/Y jog state.",
+        ),
+        EvidenceCheck(
+            "Phase 4",
+            "Motion dry-run simulator documented",
+            _contains(readme, "--simulate-controller") and _contains(readme, "refuses PLASMA by default"),
+            str(readme.relative_to(repo_root)),
+            "README documents hardware-free HOME/MOVE/STATUS simulator and plasma refusal default.",
         ),
     ]
     return checks
