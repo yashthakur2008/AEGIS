@@ -18,6 +18,7 @@ from .inference import build_detector, draw_detections, encode_jpeg
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "wound_cv" / "aegis_wound_yolo_seg" / "weights" / "best.pt"
 DASHBOARD_PATH = REPO_ROOT / "docs" / "dashboard" / "motion_camera_dashboard_mockup.html"
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
 
 @dataclass
@@ -149,13 +150,39 @@ class WoundCvHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, "Not found")
             return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
+            content_length = self.headers.get("Content-Length", "0")
+            try:
+                length = int(content_length)
+            except ValueError as exc:
+                raise RuntimeError("Invalid Content-Length for browser frame upload") from exc
             if length <= 0:
                 raise RuntimeError("No browser frame was uploaded")
+            if length > MAX_UPLOAD_BYTES:
+                self._send_json(
+                    {
+                        **self.camera_state.status(),
+                        "ok": False,
+                        "error": f"Uploaded browser frame is too large; limit is {MAX_UPLOAD_BYTES} bytes",
+                    },
+                    status=413,
+                )
+                return
             body = self.rfile.read(length)
             self._send_json(self.camera_state.detect_uploaded_jpeg(body))
         except Exception as exc:
-            self._send_json({"ok": False, "error": str(exc), **self.camera_state.status()}, status=503)
+            self._send_json({**self.camera_state.status(), "ok": False, "error": str(exc)}, status=503)
+
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        if path != "/cv-detect-frame":
+            self.send_error(404, "Not found")
+            return
+        self.send_response(204)
+        self._send_cors_headers()
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.end_headers()
 
     def _send_file(self, path: Path, content_type: str) -> None:
         body = path.read_bytes()
@@ -171,21 +198,24 @@ class WoundCvHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_cors_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
 
     def _send_cv_frame(self) -> None:
         try:
             body = self.camera_state.capture_annotated_jpeg()
         except Exception as exc:
-            self._send_json({"ok": False, "error": str(exc), **self.camera_state.status()}, status=503)
+            self._send_json({**self.camera_state.status(), "ok": False, "error": str(exc)}, status=503)
             return
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Cache-Control", "no-store, max-age=0")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

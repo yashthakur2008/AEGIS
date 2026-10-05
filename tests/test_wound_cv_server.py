@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import threading
+import http.client
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
 
-from wound_cv_model.camera_server import CameraState, WoundCvHandler
+from wound_cv_model.camera_server import MAX_UPLOAD_BYTES, CameraState, WoundCvHandler
 from wound_cv_model.detection import DepthEstimate, WoundDetection
 from wound_cv_model.inference import encode_jpeg
 
@@ -156,6 +157,70 @@ def test_http_upload_endpoint_reports_multiple_wounds_and_no_wound():
         assert payload["is_wound"] is False
         assert payload["wound_count"] == 0
         assert payload["detections"] == []
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_upload_endpoint_supports_browser_cors_preflight():
+    state = CameraState(camera_index=99)
+    state.detector = EmptyDetector()
+
+    class TestHandler(WoundCvHandler):
+        camera_state = state
+
+        def log_message(self, format, *args):  # noqa: A002, N802
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/cv-detect-frame"
+
+    try:
+        request = urllib.request.Request(url, method="OPTIONS")
+        request.add_header("Origin", "http://example.test")
+        request.add_header("Access-Control-Request-Method", "POST")
+        request.add_header("Access-Control-Request-Headers", "Content-Type")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == 204
+            assert response.headers["Access-Control-Allow-Origin"] == "*"
+            assert "POST" in response.headers["Access-Control-Allow-Methods"]
+            assert "Content-Type" in response.headers["Access-Control-Allow-Headers"]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_upload_endpoint_rejects_oversized_frames_before_decode():
+    state = CameraState(camera_index=99)
+    state.detector = EmptyDetector()
+
+    class TestHandler(WoundCvHandler):
+        camera_state = state
+
+        def log_message(self, format, *args):  # noqa: A002, N802
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+
+    try:
+        connection = http.client.HTTPConnection(host, port, timeout=5)
+        connection.putrequest("POST", "/cv-detect-frame")
+        connection.putheader("Content-Type", "image/jpeg")
+        connection.putheader("Content-Length", str(MAX_UPLOAD_BYTES + 1))
+        connection.endheaders()
+        response = connection.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+        connection.close()
+
+        assert response.status == 413
+        assert payload["ok"] is False
+        assert "too large" in payload["error"]
+        assert state.frames_served == 0
     finally:
         server.shutdown()
         server.server_close()
