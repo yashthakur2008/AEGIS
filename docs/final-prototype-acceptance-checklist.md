@@ -2,6 +2,14 @@
 
 Use this checklist to carry the roadmap through a complete workflow. Do not mark a phase complete unless the evidence column is filled with a screenshot, log path, test output, or commit hash.
 
+For a local phases 0-2 evidence preflight, run:
+
+```bash
+python tools/demo_evidence_check.py
+```
+
+The command only verifies local files and static dashboard affordances. Live browser, Logitech, motion, and safety rows still need manual evidence such as screenshots, logs, or operator notes.
+
 ## Phase 0: safety and startup
 
 | Check | Pass condition | Evidence |
