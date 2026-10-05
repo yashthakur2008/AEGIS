@@ -81,6 +81,13 @@ def multi_wound() -> np.ndarray:
     return image
 
 
+def elongated_abrasion() -> np.ndarray:
+    image = blank_skin()
+    cv2.ellipse(image, (340, 205), (54, 126), -26, 0, 360, (145, 154, 224), -1)
+    cv2.ellipse(image, (332, 258), (42, 56), -26, 0, 360, (82, 70, 205), -1)
+    return image
+
+
 SMOKE_CASES: tuple[SmokeCase, ...] = (
     SmokeCase("printed_wound_positive", 1, 3, printed_wound_positive),
     SmokeCase("normal_skin_negative", 0, 0, normal_skin_negative),
@@ -88,6 +95,7 @@ SMOKE_CASES: tuple[SmokeCase, ...] = (
     SmokeCase("far_wound", 1, 2, far_wound),
     SmokeCase("close_wound", 1, 2, close_wound),
     SmokeCase("multi_wound", 2, 4, multi_wound),
+    SmokeCase("elongated_abrasion", 1, 1, elongated_abrasion),
 )
 
 

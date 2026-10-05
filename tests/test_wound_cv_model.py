@@ -68,6 +68,36 @@ def test_heuristic_detector_finds_red_wound_candidate():
     assert detection.depth is not None
 
 
+def test_heuristic_detector_expands_to_connected_pink_abrasion_extent():
+    frame = np.zeros((260, 360, 3), dtype=np.uint8)
+    frame[:] = (172, 190, 215)
+    cv2.ellipse(frame, (210, 145), (42, 96), -24, 0, 360, (145, 155, 225), -1)
+    cv2.ellipse(frame, (205, 182), (30, 44), -24, 0, 360, (82, 70, 205), -1)
+
+    detections = HeuristicWoundDetector(min_area_px=100).detect(frame)
+
+    assert detections
+    detection = detections[0]
+    assert detection.x_px <= 158
+    assert detection.y_px <= 58
+    assert detection.width_px >= 90
+    assert detection.height_px >= 160
+
+
+def test_heuristic_detector_keeps_separate_wounds_separate_while_expanding_extent():
+    frame = np.zeros((260, 420, 3), dtype=np.uint8)
+    frame[:] = (172, 190, 215)
+    cv2.ellipse(frame, (130, 130), (42, 62), -8, 0, 360, (145, 155, 225), -1)
+    cv2.ellipse(frame, (130, 145), (28, 34), -8, 0, 360, (82, 70, 205), -1)
+    cv2.ellipse(frame, (300, 130), (38, 55), 12, 0, 360, (145, 155, 225), -1)
+    cv2.ellipse(frame, (300, 145), (24, 30), 12, 0, 360, (82, 70, 205), -1)
+
+    detections = HeuristicWoundDetector(min_area_px=100).detect(frame)
+
+    assert len(detections) == 2
+    assert all(detection.width_px < 120 for detection in detections)
+
+
 def test_draw_detections_encodes_jpeg():
     frame = np.zeros((80, 100, 3), dtype=np.uint8)
     detection = WoundDetection("wound", 0.9, 10, 12, 20, 18, 360, depth=estimate_depth_hint(0.05, 0.8))
