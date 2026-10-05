@@ -19,26 +19,25 @@ class HeuristicWoundDetector:
     def detect(self, frame_bgr: np.ndarray) -> list[WoundDetection]:
         if frame_bgr.size == 0:
             return []
-        hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-        lower_red_1 = np.array([0, 35, 35])
-        upper_red_1 = np.array([18, 255, 255])
-        lower_red_2 = np.array([160, 35, 35])
-        upper_red_2 = np.array([179, 255, 255])
-        mask = cv2.inRange(hsv, lower_red_1, upper_red_1) | cv2.inRange(hsv, lower_red_2, upper_red_2)
+        core_mask, extent_mask = self._wound_masks(frame_bgr)
         kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        core_mask = cv2.morphologyEx(core_mask, cv2.MORPH_OPEN, kernel)
+        core_mask = cv2.morphologyEx(core_mask, cv2.MORPH_CLOSE, kernel)
+        extent_mask = cv2.morphologyEx(extent_mask, cv2.MORPH_OPEN, kernel)
+        extent_mask = cv2.morphologyEx(extent_mask, cv2.MORPH_CLOSE, np.ones((11, 11), np.uint8))
+        contours, _ = cv2.findContours(core_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         frame_area = float(frame_bgr.shape[0] * frame_bgr.shape[1])
         detections: list[WoundDetection] = []
         for contour in contours:
             area = float(cv2.contourArea(contour))
             if area < self.min_area_px:
                 continue
-            x, y, w, h = cv2.boundingRect(contour)
-            roi_mask = mask[y : y + h, x : x + w]
-            redness_score = float(np.count_nonzero(roi_mask)) / max(float(w * h), 1.0)
-            confidence = max(0.25, min(0.95, 0.35 + redness_score * 0.5 + min(area / frame_area * 6.0, 0.1)))
+            x, y, w, h, extent_area = self._expanded_extent(contour, core_mask, extent_mask)
+            roi_core_mask = core_mask[y : y + h, x : x + w]
+            roi_extent_mask = extent_mask[y : y + h, x : x + w]
+            redness_score = float(np.count_nonzero(roi_extent_mask)) / max(float(w * h), 1.0)
+            core_score = float(np.count_nonzero(roi_core_mask)) / max(float(w * h), 1.0)
+            confidence = max(0.25, min(0.95, 0.35 + redness_score * 0.35 + core_score * 0.2 + min(extent_area / frame_area * 6.0, 0.1)))
             detections.append(
                 WoundDetection(
                     label="wound_candidate",
@@ -47,12 +46,48 @@ class HeuristicWoundDetector:
                     y_px=float(y),
                     width_px=float(w),
                     height_px=float(h),
-                    area_px2=area,
+                    area_px2=extent_area,
                     redness_score=redness_score,
-                    depth=estimate_depth_hint(area / frame_area, redness_score),
+                    depth=estimate_depth_hint(extent_area / frame_area, redness_score),
                 )
             )
         return sorted(detections, key=lambda d: d.area_px2, reverse=True)
+
+    def _wound_masks(self, frame_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+        b, g, r = cv2.split(frame_bgr.astype(np.int16))
+        red_dominance = r - np.maximum(g, b)
+        red_dominance_threshold = max(12, int(np.median(red_dominance)) + 10)
+        core_red_dominance_threshold = max(20, int(np.median(red_dominance)) + 20)
+        hue = hsv[:, :, 0]
+        saturation = hsv[:, :, 1]
+        value = hsv[:, :, 2]
+        pink_or_red_hue = (hue <= 22) | (hue >= 155)
+        core = pink_or_red_hue & (saturation >= 35) & (value >= 35) & (red_dominance >= core_red_dominance_threshold)
+        core_mask = np.where(core, 255, 0).astype(np.uint8)
+        erythema = pink_or_red_hue & (saturation >= 18) & (value >= 50) & (red_dominance >= red_dominance_threshold)
+        extent_mask = np.where(erythema, 255, 0).astype(np.uint8) | core_mask
+        return core_mask, extent_mask
+
+    def _expanded_extent(self, contour: np.ndarray, core_mask: np.ndarray, extent_mask: np.ndarray) -> tuple[int, int, int, int, float]:
+        core_component = np.zeros_like(core_mask)
+        cv2.drawContours(core_component, [contour], -1, 255, thickness=-1)
+        overlap_seed = cv2.dilate(core_component, np.ones((19, 19), np.uint8))
+        component_count, labels, stats, _ = cv2.connectedComponentsWithStats(extent_mask, connectivity=8)
+        selected = np.zeros_like(extent_mask)
+        for label in range(1, component_count):
+            component = labels == label
+            if np.any(component & (overlap_seed > 0)):
+                selected[component] = 255
+        if np.count_nonzero(selected) == 0:
+            selected = core_component
+        contours, _ = cv2.findContours(selected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            return x, y, w, h, float(cv2.contourArea(contour))
+        x, y, w, h = cv2.boundingRect(np.vstack(contours))
+        extent_area = float(np.count_nonzero(selected[y : y + h, x : x + w]))
+        return x, y, w, h, extent_area
 
 
 class YoloWoundDetector:
