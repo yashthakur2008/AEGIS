@@ -7,6 +7,15 @@ from autonomous_movement.calibration import XYCalibration
 from autonomous_movement.movement import load_detections, plan_move_commands
 
 
+def load_detections_or_exit(path: Path):
+    try:
+        return load_detections(path)
+    except OSError as exc:
+        raise SystemExit(f"Could not read detections CSV {path}: {exc}") from exc
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert CV/Pixy detections into motion-only Arduino MOVE commands.")
     parser.add_argument("detections_csv", type=Path, help="CSV with centroid_x_px,centroid_y_px,area_px2,confidence")
@@ -17,7 +26,7 @@ def main() -> None:
     args = parser.parse_args()
 
     calibration = XYCalibration.from_json(args.calibration.read_text())
-    commands = plan_move_commands(load_detections(args.detections_csv), calibration, z_mm=args.z_mm)
+    commands = plan_move_commands(load_detections_or_exit(args.detections_csv), calibration, z_mm=args.z_mm)
 
     if args.serial_port is None:
         for command in commands:
