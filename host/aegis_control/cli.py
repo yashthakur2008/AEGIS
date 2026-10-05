@@ -10,19 +10,43 @@ from .planner import PlasmaPolicy, TreatmentPlanner, VisionDetection
 from .serial_client import AegisSerialClient
 from .simulator import DryRunSerialPort
 
+REQUIRED_DETECTION_FIELDS = ("centroid_x_px", "centroid_y_px", "area_px2")
+
 
 def load_detections(path: Path) -> list[VisionDetection]:
     with path.open(newline="") as handle:
         reader = csv.DictReader(handle)
-        return [
-            VisionDetection(
-                centroid_x_px=float(row["centroid_x_px"]),
-                centroid_y_px=float(row["centroid_y_px"]),
-                area_px2=float(row["area_px2"]),
-                confidence=float(row.get("confidence") or 1.0),
-            )
-            for row in reader
-        ]
+        fieldnames = set(reader.fieldnames or [])
+        missing_fields = [field for field in REQUIRED_DETECTION_FIELDS if field not in fieldnames]
+        if missing_fields:
+            raise ValueError(f"{path}: missing required detection CSV column(s): {', '.join(missing_fields)}")
+
+        detections: list[VisionDetection] = []
+        for line_number, row in enumerate(reader, start=2):
+            try:
+                detections.append(
+                    VisionDetection(
+                        centroid_x_px=float(row["centroid_x_px"]),
+                        centroid_y_px=float(row["centroid_y_px"]),
+                        area_px2=float(row["area_px2"]),
+                        confidence=float(row.get("confidence") or 1.0),
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{path}: invalid numeric detection value on CSV line {line_number}: "
+                    "centroid_x_px, centroid_y_px, area_px2, and confidence must be numbers"
+                ) from exc
+        return detections
+
+
+def load_detections_or_exit(path: Path) -> list[VisionDetection]:
+    try:
+        return load_detections(path)
+    except OSError as exc:
+        raise SystemExit(f"Could not read detections CSV {path}: {exc}") from exc
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def emit_or_send_commands(
@@ -92,7 +116,7 @@ def main() -> None:
     )
     planner = TreatmentPlanner(calibration=calibration, plasma_policy=PlasmaPolicy())
     emit_or_send_commands(
-        load_detections(args.detections_csv),
+        load_detections_or_exit(args.detections_csv),
         planner,
         emit_plasma=args.emit_plasma,
         serial_port=args.serial_port,
