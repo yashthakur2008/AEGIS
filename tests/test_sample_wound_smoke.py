@@ -7,7 +7,7 @@ from pathlib import Path
 
 from wound_cv_model.camera_server import CameraState, WoundCvHandler
 from wound_cv_model.inference import HeuristicWoundDetector
-from tools.sample_wound_smoke import SMOKE_CASES, run_smoke
+from tools.sample_wound_smoke import SMOKE_CASES, run_smoke, validate_endpoint_payload
 
 
 def test_sample_wound_smoke_cases_are_representative():
@@ -74,3 +74,23 @@ def test_sample_wound_smoke_can_replay_through_http_endpoint(tmp_path: Path):
 
     saved = json.loads((tmp_path / "sample_wound_smoke_report.json").read_text(encoding="utf-8"))
     assert saved["mode"] == "http_endpoint"
+
+
+def test_sample_wound_smoke_flags_endpoint_payload_mismatches():
+    case = SMOKE_CASES[0]
+    payload = {"ok": False, "is_wound": False, "wound_count": 0, "detections": [{"label": "wound"}]}
+
+    failures = validate_endpoint_payload(case, payload, count=1)
+
+    assert any("ok=False" in failure for failure in failures)
+    assert any("is_wound=False" in failure for failure in failures)
+    assert any("wound_count=0" in failure for failure in failures)
+
+
+def test_sample_wound_smoke_records_image_write_failure(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("tools.sample_wound_smoke.cv2.imwrite", lambda _path, _image: False)
+
+    report = run_smoke(tmp_path, write_images=True)
+
+    assert report["ok"] is False
+    assert any("failed to write smoke image" in failure for failure in report["failures"])

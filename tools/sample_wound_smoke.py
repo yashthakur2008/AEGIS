@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,8 +110,28 @@ def detect_with_endpoint(image: np.ndarray, endpoint_url: str) -> dict[str, obje
         method="POST",
         headers={"Content-Type": "image/jpeg"},
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Endpoint returned HTTP {exc.code}: {detail}") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Endpoint replay failed: {exc}") from exc
+
+
+def validate_endpoint_payload(case: SmokeCase, payload: dict[str, object], count: int) -> list[str]:
+    failures: list[str] = []
+    server_ok = payload.get("ok")
+    server_is_wound = payload.get("is_wound")
+    server_wound_count = payload.get("wound_count")
+    if server_ok is not True:
+        failures.append(f"{case.name}: endpoint returned ok={server_ok!r}")
+    if server_is_wound is not (count > 0):
+        failures.append(f"{case.name}: endpoint is_wound={server_is_wound!r} disagrees with {count} detections")
+    if server_wound_count != count:
+        failures.append(f"{case.name}: endpoint wound_count={server_wound_count!r} disagrees with {count} detections")
+    return failures
 
 
 def run_smoke(output_dir: Path, write_images: bool, endpoint_url: str | None = None) -> dict[str, object]:
@@ -129,6 +150,9 @@ def run_smoke(output_dir: Path, write_images: bool, endpoint_url: str | None = N
         if endpoint_url:
             payload = detect_with_endpoint(image, endpoint_url)
             detections = payload.get("detections", [])
+            if not isinstance(detections, list):
+                failures.append(f"{case.name}: endpoint detections must be a list")
+                detections = []
         else:
             assert detector is not None
             detections = [detection.to_dict() for detection in detector.detect(image)]
@@ -139,7 +163,10 @@ def run_smoke(output_dir: Path, write_images: bool, endpoint_url: str | None = N
                 f"{case.name}: expected {case.expected_min_count}-{case.expected_max_count} detections, got {count}"
             )
         if write_images:
-            cv2.imwrite(str(image_dir / f"{case.name}.jpg"), image)
+            if not cv2.imwrite(str(image_dir / f"{case.name}.jpg"), image):
+                failures.append(f"{case.name}: OpenCV failed to write smoke image")
+        if payload is not None:
+            failures.extend(validate_endpoint_payload(case, payload, count))
         cases.append(
             {
                 "name": case.name,

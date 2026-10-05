@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import threading
 import http.client
 import urllib.request
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from wound_cv_model.camera_server import MAX_UPLOAD_BYTES, CameraState, WoundCvHandler
+from wound_cv_model.camera_server import MAX_UPLOAD_BYTES, CameraState, WoundCvHandler, read_upload_body
 from wound_cv_model.detection import DepthEstimate, WoundDetection
 from wound_cv_model.inference import encode_jpeg
 
@@ -224,6 +225,19 @@ def test_http_upload_endpoint_rejects_oversized_frames_before_decode():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_upload_body_reader_reports_truncated_browser_frame():
+    try:
+        read_upload_body(io.BytesIO(b"abc"), expected_length=5)
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected short body error")
+
+    assert "ended early" in message
+    assert "expected 5 bytes" in message
+    assert "received 3" in message
 
 
 def test_served_dashboard_smoke_workflow_contains_current_operator_ui():

@@ -21,6 +21,13 @@ DASHBOARD_PATH = REPO_ROOT / "docs" / "dashboard" / "motion_camera_dashboard_moc
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
 
+def read_upload_body(stream: Any, expected_length: int) -> bytes:
+    body = stream.read(expected_length)
+    if len(body) != expected_length:
+        raise RuntimeError(f"Browser frame upload ended early; expected {expected_length} bytes, received {len(body)}")
+    return body
+
+
 @dataclass
 class CameraState:
     camera_index: int = 0
@@ -167,7 +174,7 @@ class WoundCvHandler(http.server.SimpleHTTPRequestHandler):
                     status=413,
                 )
                 return
-            body = self.rfile.read(length)
+            body = read_upload_body(self.rfile, length)
             self._send_json(self.camera_state.detect_uploaded_jpeg(body))
         except Exception as exc:
             self._send_json({**self.camera_state.status(), "ok": False, "error": str(exc)}, status=503)
