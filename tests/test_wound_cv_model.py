@@ -130,6 +130,44 @@ def test_yolo_region_filter_keeps_red_wound_like_candidate():
     assert detector._looks_like_wound_region(frame, 118, 92, 202, 148, 0.06, 0.72)
 
 
+def test_yolo_detection_expands_core_box_to_connected_abrasion_extent():
+    class FakeTensor:
+        def __init__(self, values):
+            self.values = values
+
+        def __getitem__(self, index):
+            return self.values[index]
+
+        def tolist(self):
+            return self.values
+
+    class FakeBox:
+        xyxy = [FakeTensor([185, 145, 225, 220])]
+        conf = [0.67]
+        cls = [0]
+
+    class FakeModel:
+        def predict(self, frame, conf, iou, max_det, verbose):
+            return [type("Result", (), {"names": {0: "wound"}, "boxes": [FakeBox()]})()]
+
+    frame = np.zeros((260, 360, 3), dtype=np.uint8)
+    frame[:] = (172, 190, 215)
+    cv2.ellipse(frame, (210, 145), (42, 96), -24, 0, 360, (145, 155, 225), -1)
+    cv2.ellipse(frame, (205, 182), (30, 44), -24, 0, 360, (82, 70, 205), -1)
+    detector = YoloWoundDetector.__new__(YoloWoundDetector)
+    detector.confidence = 0.55
+    detector.model = FakeModel()
+
+    detections = detector.detect(frame)
+
+    assert len(detections) == 1
+    detection = detections[0]
+    assert detection.x_px <= 158
+    assert detection.y_px <= 58
+    assert detection.width_px >= 90
+    assert detection.height_px >= 160
+
+
 def test_run_inference_creates_nested_outputs(tmp_path):
     image_path = tmp_path / "input" / "wound.jpg"
     image_path.parent.mkdir()
