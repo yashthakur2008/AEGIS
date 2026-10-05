@@ -4,6 +4,8 @@ import numpy as np
 import cv2  # type: ignore[import-not-found]
 
 from wound_cv_model import HeuristicWoundDetector, WoundDetection, detections_to_csv_rows, estimate_depth_hint
+from wound_cv_model.evaluate import run_evaluation
+from wound_cv_model.infer import run_inference
 from wound_cv_model.inference import YoloWoundDetector, draw_detections, encode_jpeg
 
 
@@ -96,3 +98,65 @@ def test_yolo_region_filter_keeps_red_wound_like_candidate():
     cv2.ellipse(frame, (160, 120), (38, 24), 0, 0, 360, (55, 65, 195), -1)
 
     assert detector._looks_like_wound_region(frame, 118, 92, 202, 148, 0.06, 0.72)
+
+
+def test_run_inference_creates_nested_outputs(tmp_path):
+    image_path = tmp_path / "input" / "wound.jpg"
+    image_path.parent.mkdir()
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    frame[:] = (65, 80, 90)
+    cv2.ellipse(frame, (80, 60), (24, 16), 0, 0, 360, (45, 55, 190), -1)
+    cv2.imwrite(str(image_path), frame)
+
+    output_csv = tmp_path / "nested" / "detections" / "wound.csv"
+    annotated = tmp_path / "nested" / "images" / "wound_annotated.jpg"
+
+    count = run_inference(image_path, output_csv, annotated)
+
+    assert count >= 1
+    assert output_csv.exists()
+    assert annotated.exists()
+    assert "centroid_x_px" in output_csv.read_text(encoding="utf-8")
+
+
+def test_run_inference_reports_unreadable_image(tmp_path):
+    missing_image = tmp_path / "missing.jpg"
+
+    try:
+        run_inference(missing_image, tmp_path / "out.csv", tmp_path / "out.jpg")
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected unreadable image error")
+
+    assert str(missing_image) in message
+    assert "Could not read image" in message
+
+
+def test_run_evaluation_creates_report_and_rejects_empty_input(tmp_path):
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    frame[:] = (65, 80, 90)
+    cv2.ellipse(frame, (80, 60), (24, 16), 0, 0, 360, (45, 55, 190), -1)
+    cv2.imwrite(str(image_dir / "wound.png"), frame)
+
+    output_dir = tmp_path / "nested" / "eval"
+    result = run_evaluation(image_dir, output_dir)
+
+    assert (output_dir / "report.json").exists()
+    assert len(result["records"]) == 1
+    assert result["records"][0]["count"] >= 1
+    assert (output_dir / "wound_annotated.jpg").exists()
+
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    try:
+        run_evaluation(empty_dir, tmp_path / "unused")
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected empty evaluation input error")
+
+    assert str(empty_dir) in message
+    assert "No readable image files" in message

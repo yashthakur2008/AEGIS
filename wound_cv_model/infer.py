@@ -9,6 +9,29 @@ import cv2  # type: ignore[import-not-found]
 from .detection import detections_to_csv_rows
 from .inference import build_detector, draw_detections
 
+DETECTION_CSV_FIELDS = ["centroid_x_px", "centroid_y_px", "area_px2", "confidence", "label", "depth_hint", "z_offset_hint_mm"]
+
+
+def run_inference(image: Path, output_csv: Path, annotated: Path, weights: Path | None = None) -> int:
+    frame = cv2.imread(str(image))
+    if frame is None:
+        raise ValueError(f"Could not read image: {image}")
+    detector = build_detector(weights)
+    detections = detector.detect(frame)
+
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    annotated.parent.mkdir(parents=True, exist_ok=True)
+
+    rows = detections_to_csv_rows(detections)
+    with output_csv.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=DETECTION_CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    if not cv2.imwrite(str(annotated), draw_detections(frame, detections)):
+        raise ValueError(f"Could not write annotated image: {annotated}")
+    return len(detections)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run wound inference on one image and write planner-compatible detections CSV.")
@@ -18,21 +41,11 @@ def main() -> None:
     parser.add_argument("--annotated", type=Path, default=Path("wound_annotated.jpg"))
     args = parser.parse_args()
 
-    frame = cv2.imread(str(args.image))
-    if frame is None:
-        raise SystemExit(f"Could not read image: {args.image}")
-    detector = build_detector(args.weights)
-    detections = detector.detect(frame)
-
-    rows = detections_to_csv_rows(detections)
-    with args.output_csv.open("w", newline="") as handle:
-        fieldnames = ["centroid_x_px", "centroid_y_px", "area_px2", "confidence", "label", "depth_hint", "z_offset_hint_mm"]
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-    cv2.imwrite(str(args.annotated), draw_detections(frame, detections))
-    print(f"wrote {len(detections)} detections to {args.output_csv}")
+    try:
+        count = run_inference(args.image, args.output_csv, args.annotated, weights=args.weights)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"wrote {count} detections to {args.output_csv}")
 
 
 if __name__ == "__main__":
