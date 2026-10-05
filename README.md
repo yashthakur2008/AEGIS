@@ -72,6 +72,16 @@ python -m host.aegis_control.cli detections.csv \
 
 The CSV contract is one detection per row with `centroid_x_px`, `centroid_y_px`, `area_px2`, and optional `confidence`. This stage intentionally sends motion first. Add `--emit-plasma` only after motion-only validation, CAP driver wiring, and safety interlocks are confirmed.
 
+For hardware-free validation of the same HOME/MOVE/STATUS flow, use the in-memory controller simulator:
+
+```bash
+python -m host.aegis_control.cli detections.csv \
+  --x-mm-per-px 0.5 --y-mm-per-px 0.5 \
+  --simulate-controller
+```
+
+The simulator refuses PLASMA by default and is intended for dry-run motion workflow checks before connecting hardware.
+
 - **`firmware/jog_test/`** — bring-up sketch to verify motor wiring, driver
   direction, and limit switches before running the full control firmware.
   Requires the [`AccelStepper`](https://www.airspayce.com/mikem/arduino/AccelStepper/) library.
