@@ -3,9 +3,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from autonomous_movement.calibrate import load_samples_or_exit
+from autonomous_movement.calibrate import load_samples_or_exit, main as calibrate_main
 from autonomous_movement.calibration import CalibrationSample, XYCalibration, load_samples, solve_affine
-from autonomous_movement.move_from_detection import load_detections_or_exit
+from autonomous_movement.move_from_detection import load_calibration_or_exit, load_detections_or_exit
 from autonomous_movement.movement import Detection, detection_to_move_command, load_detections, plan_move_commands
 
 
@@ -103,3 +103,37 @@ def test_autonomous_calibration_cli_reports_bad_numeric_line(tmp_path: Path):
     assert str(samples_csv) in message
     assert "line 2" in message
     assert "must be numbers" in message
+
+
+def test_autonomous_calibration_cli_creates_nested_output(tmp_path: Path, monkeypatch):
+    samples_csv = tmp_path / "samples.csv"
+    samples_csv.write_text(
+        "pixel_x,pixel_y,machine_x_mm,machine_y_mm\n"
+        "0,0,0,0\n"
+        "10,0,10,0\n"
+        "0,10,0,10\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "nested" / "calibration" / "calibration.json"
+    monkeypatch.setattr("sys.argv", ["calibrate", str(samples_csv), "--output", str(output)])
+
+    calibrate_main()
+
+    assert output.exists()
+    calibration = XYCalibration.from_json(output.read_text(encoding="utf-8"))
+    assert calibration.image_to_machine(5, 7) == (5, 7)
+
+
+def test_move_from_detection_reports_invalid_calibration_json(tmp_path: Path):
+    calibration_json = tmp_path / "calibration.json"
+    calibration_json.write_text("not json", encoding="utf-8")
+
+    try:
+        load_calibration_or_exit(calibration_json)
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected invalid calibration JSON SystemExit")
+
+    assert str(calibration_json) in message
+    assert "Invalid calibration JSON" in message
