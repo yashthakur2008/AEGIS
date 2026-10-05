@@ -8,6 +8,7 @@ from typing import TextIO
 from .calibration import AffineCalibration
 from .planner import PlasmaPolicy, TreatmentPlanner, VisionDetection
 from .serial_client import AegisSerialClient
+from .simulator import DryRunSerialPort
 
 
 def load_detections(path: Path) -> list[VisionDetection]:
@@ -32,8 +33,19 @@ def emit_or_send_commands(
     serial_port: str | None,
     baud: int,
     output: TextIO,
+    simulate_controller: bool = False,
 ) -> None:
     waypoints = planner.plan(detections)
+    if simulate_controller:
+        simulator = DryRunSerialPort(allow_plasma=emit_plasma)
+        client = AegisSerialClient(simulator, enable_plasma=emit_plasma, response_timeout_s=0.1)
+        print(client.home(), file=output)
+        for waypoint in waypoints:
+            for response in client.execute_waypoint(waypoint):
+                print(response, file=output)
+        print(client.status(), file=output)
+        return
+
     if serial_port is None:
         print("HOME", file=output)
         for waypoint in waypoints:
@@ -67,6 +79,7 @@ def main() -> None:
     parser.add_argument("--z-mm", type=float, default=4.0)
     parser.add_argument("--emit-plasma", action="store_true", help="Print PLASMA commands after MOVE commands.")
     parser.add_argument("--serial-port", help="Send planned MOVE commands to an Arduino serial port instead of printing only.")
+    parser.add_argument("--simulate-controller", action="store_true", help="Run commands through an in-memory firmware line-protocol simulator instead of hardware.")
     parser.add_argument("--baud", type=int, default=115200, help="Arduino serial baud when --serial-port is used.")
     args = parser.parse_args()
 
@@ -85,6 +98,7 @@ def main() -> None:
         serial_port=args.serial_port,
         baud=args.baud,
         output=__import__("sys").stdout,
+        simulate_controller=args.simulate_controller,
     )
 
 

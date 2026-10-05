@@ -4,7 +4,8 @@ from io import StringIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from host.aegis_control import AffineCalibration, PlasmaPolicy, TreatmentPlanner, VisionDetection
+from host.aegis_control import AffineCalibration, DryRunSerialPort, PlasmaPolicy, TreatmentPlanner, VisionDetection
+from host.aegis_control.serial_client import AegisSerialClient
 from host.aegis_control.cli import emit_or_send_commands
 
 
@@ -53,3 +54,34 @@ def test_cli_emit_or_send_commands_prints_motion_only_plan():
     )
 
     assert output.getvalue().splitlines() == ["HOME", "MOVE 50.000 20.000 4.000", "STATUS"]
+
+
+def test_dry_run_serial_port_simulates_motion_and_blocks_plasma_by_default():
+    port = DryRunSerialPort()
+    client = AegisSerialClient(port, enable_plasma=False, response_timeout_s=0.1)
+
+    assert client.home().startswith("OK HOME")
+    assert client.send_line("MOVE 12.000 3.500 4.000") == "OK MOVE X=12.000 Y=3.500 Z=4.000"
+    assert client.send_line("PLASMA 0.5 1000") == "ERR PLASMA_DISABLED"
+    assert client.status() == "OK STATUS X=12.000 Y=3.500 Z=4.000 HOMED=1 STOPPED=0"
+
+
+def test_cli_emit_or_send_commands_can_use_simulated_controller():
+    output = StringIO()
+    planner = TreatmentPlanner(AffineCalibration.from_scale_offset(x_mm_per_px=0.5, y_mm_per_px=0.25))
+
+    emit_or_send_commands(
+        [VisionDetection(100, 80, 1200)],
+        planner,
+        emit_plasma=False,
+        serial_port=None,
+        baud=115200,
+        output=output,
+        simulate_controller=True,
+    )
+
+    assert output.getvalue().splitlines() == [
+        "OK HOME X=0.000 Y=0.000 Z=4.000",
+        "OK MOVE X=50.000 Y=20.000 Z=4.000",
+        "OK STATUS X=50.000 Y=20.000 Z=4.000 HOMED=1 STOPPED=0",
+    ]
